@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Banhammer: card images/texts belong to Wizards of the Coast, never commit them
+/data/
+/images/
+/outputs/
