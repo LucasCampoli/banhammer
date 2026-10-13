@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "banhammer"
+version = "0.1.0"
+description = "Balance auditor and rules arbiter for Magic: The Gathering cards"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "pydantic==2.12.5",
+    "PyYAML==6.0.3",
+    "numpy==2.2.6",
+    "opencv-python-headless==4.12.0.88",
+    "pytesseract==0.3.13",
+    "requests==2.32.5",
+    "cairosvg==2.8.2",
+    "rich==14.2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+banhammer = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
