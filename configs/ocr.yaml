@@ -1,0 +1,19 @@
+backend: tesseract
+perspective_correct: false   # enable for real photos (or use --photo)
+preprocess:
+  grayscale: true
+  upscale: 2
+  denoise: median            # none | median | nlmeans
+  threshold: none            # none | otsu | adaptive
+tesseract:
+  lang: eng
+  psm:
+    name: 7
+    type_line: 7
+    rules_text: 6
+    power_toughness: 7
+  whitelist:
+    power_toughness: "0123456789/*+-"
+mana:
+  templates_dir: data/mana_templates
+  min_score: 0.7
