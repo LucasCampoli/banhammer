@@ -71,6 +71,8 @@ class OCRPipeline:
                 crop = crop[int(h * .2):int(h * .8), int(w * .2):int(w * .85)]
             pre = preprocess(crop, self.cfg.get("preprocess", {}))
             if zone == "power_toughness":
+                if pre.mean() < 110:  # light text on a dark box (vehicles): invert
+                    pre = 255 - pre
                 pre = cv2.copyMakeBorder(pre, 20, 20, 20, 20, cv2.BORDER_REPLICATE)
             if debug:
                 cv2.imwrite(str(debug / f"{zone}.png"), pre)
