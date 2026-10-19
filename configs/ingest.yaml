@@ -1,0 +1,19 @@
+# Offline data sources and the Pinecone index they are written to.
+# The embedding model here must match configs/pipeline.yaml: vectors from
+# different models cannot be compared, and the index name includes the model.
+sources:
+  - scryfall_cards
+  - comp_rules
+raw_dir: data/raw
+processed_dir: data/processed
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+index:
+  cloud: aws
+  region: us-east-1
+  metric: cosine
+  dimension: 1536
+  batch_size: 100
