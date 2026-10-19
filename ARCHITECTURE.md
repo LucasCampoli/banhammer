@@ -62,7 +62,7 @@ Factories that build LangChain objects from the YAML, so the rest of the code ne
 | Factory | Providers | Notes |
 | --- | --- | --- |
 | `llm` | `openai` (`ChatOpenAI`), `huggingface` (`ChatHuggingFace`), `fake` | `openai` is the default. `huggingface` is for local testing. `fake` returns fixed answers for unit tests. |
-| `embeddings` | `openai` (`OpenAIEmbeddings`, `text-embedding-3-small`), `huggingface` (`HuggingFaceEmbeddings`) | |
+| `embeddings` | `openai` (`OpenAIEmbeddings`, `text-embedding-3-small`), `huggingface` (`HuggingFaceEmbeddings`), `fake` (`DeterministicFakeEmbedding`) | `fake` is for unit tests. |
 | `vector_store` | `pinecone` (`PineconeVectorStore`), `memory` (`InMemoryVectorStore`) | `memory` is for unit tests. |
 
 Vectors from different embedding models cannot be compared, so the Pinecone index name includes the embedding model (for example `banhammer-text-embedding-3-small`). Switching models means building a new index, never mixing both.
@@ -170,7 +170,7 @@ Every advanced module is enabled only after it beats the naive configuration on 
 | Area | Modules |
 | --- | --- |
 | Core | `models`, `config` + `registry`, `graph_builder`, `cli`, `eval` |
-| Providers | `llm` (`openai`, `huggingface`, `fake`), `embeddings` (`openai`, `huggingface`), `vector_store` (`pinecone`, `memory`) |
+| Providers | `llm` (`openai`, `huggingface`, `fake`), `embeddings` (`openai`, `huggingface`, `fake`), `vector_store` (`pinecone`, `memory`) |
 | Offline | `scryfall_cards`, `comp_rules`, Pinecone indexing |
 | Pipeline | `full_text` → `dense` → `exclude_self` → `llm_judge` |
 
@@ -193,8 +193,7 @@ Every advanced module is enabled only after it beats the naive configuration on 
 ```
 src/banhammer/
 ├── models.py              # CardInput, Query, Hit, BalanceReport, ingestion records
-├── config.py              # YAML loading
-├── registry.py            # module name → implementation
+├── shared/                # config, registry, card text, JSONL, reports
 ├── providers/             # llm, embeddings, vector_store factories
 ├── ingest/                # scryfall_cards, comp_rules
 ├── indexing/              # JSONL → Pinecone
