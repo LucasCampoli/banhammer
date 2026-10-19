@@ -219,7 +219,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Banhammer: card images/texts belong to Wizards of the Coast, never commit them
-/data/
+# Banhammer: card images/texts belong to Wizards of the Coast, never commit them.
+# The gold set is written by hand (names and expected labels), so it is versioned.
+/data/*
+!/data/eval/
 /images/
 /outputs/
