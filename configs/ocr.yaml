@@ -1,4 +1,3 @@
-backend: tesseract
 perspective_correct: false   # enable for real photos (or use --photo)
 preprocess:
   grayscale: true

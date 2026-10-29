@@ -1,4 +1,4 @@
-"""Vector store factory: pinecone or an in-memory store for tests."""
+"""Pinecone index, one namespace for cards and one for rules."""
 from __future__ import annotations
 
 import os
@@ -25,17 +25,16 @@ class StoreFactory:
     """One store per namespace, built from the vector_store config block."""
 
     def __init__(self, store_cfg: dict, embeddings: Any, model: str, index_cfg: dict | None = None) -> None:
-        self.store_cfg = store_cfg
+        provider = store_cfg.get("provider", "pinecone")
+        if provider != "pinecone":
+            raise ValueError(f"vector_store provider must be 'pinecone', got {provider!r}")
         self.embeddings = embeddings
-        self.model = model
         self.index_name = index_name_for(model)
         self.index_cfg = index_cfg or {}
         self._stores: dict[str, Any] = {}
 
     def ensure_index(self) -> str:
-        """Create the Pinecone index when it is missing. No-op for the memory provider."""
-        if self.store_cfg["provider"] != "pinecone":
-            return self.index_name
+        """Create the Pinecone index when it is missing."""
         api_key = os.environ.get("PINECONE_API_KEY")
         if not api_key:
             raise RuntimeError("PINECONE_API_KEY is not set")
@@ -61,20 +60,12 @@ class StoreFactory:
     def get(self, namespace: str) -> Any:
         if namespace in self._stores:
             return self._stores[namespace]
-        provider = self.store_cfg["provider"]
-        if provider == "memory":
-            from langchain_core.vectorstores import InMemoryVectorStore
+        from langchain_pinecone import PineconeVectorStore
 
-            store = InMemoryVectorStore(embedding=self.embeddings)
-        elif provider == "pinecone":
-            from langchain_pinecone import PineconeVectorStore
-
-            store = PineconeVectorStore(
-                index_name=self.index_name,
-                embedding=self.embeddings,
-                namespace=namespace,
-            )
-        else:
-            raise ValueError(f"unknown vector_store provider {provider!r}")
+        store = PineconeVectorStore(
+            index_name=self.index_name,
+            embedding=self.embeddings,
+            namespace=namespace,
+        )
         self._stores[namespace] = store
         return store

@@ -9,10 +9,10 @@ import numpy as np
 import yaml
 
 from banhammer.models import OCRCard
-from .backends import OCRBackend, get_backend
 from .mana import load_templates, recognize_mana_cost
 from .normalize import normalize
 from .preprocess import preprocess
+from .tesseract import Tesseract
 from .zones import DEFAULT_ZONES, crop_zones, draw_zone_overlay, load_zones
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -41,13 +41,10 @@ def split_pt(text: str) -> tuple[str | None, str | None]:
 
 
 class OCRPipeline:
-    def __init__(self, config: dict | None = None, backend: OCRBackend | None = None,
-                 zones_path: Path | str = DEFAULT_ZONES):
+    def __init__(self, config: dict | None = None, zones_path: Path | str = DEFAULT_ZONES):
         self.cfg = config or load_config()
         self.zones = load_zones(zones_path)
-        tcfg = self.cfg.get("tesseract", {})
-        self.backend = backend or get_backend(self.cfg.get("backend", "tesseract"),
-                                              **(tcfg if self.cfg.get("backend", "tesseract") == "tesseract" else {}))
+        self.reader = Tesseract(**self.cfg.get("tesseract", {}))
         tdir = Path(self.cfg.get("mana", {}).get("templates_dir", "data/mana_templates"))
         self.templates = load_templates(tdir if tdir.is_absolute() else ROOT / tdir)
 
@@ -76,7 +73,7 @@ class OCRPipeline:
                 pre = cv2.copyMakeBorder(pre, 20, 20, 20, 20, cv2.BORDER_REPLICATE)
             if debug:
                 cv2.imwrite(str(debug / f"{zone}.png"), pre)
-            res = self.backend.read(pre, zone)
+            res = self.reader.read(pre, zone)
             fields[zone] = clean_text(res.text, multiline=zone == "rules_text")
             conf[zone] = res.confidence
 

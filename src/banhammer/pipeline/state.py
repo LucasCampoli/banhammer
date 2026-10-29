@@ -11,5 +11,3 @@ class PipelineState(TypedDict, total=False):
     queries: list[Query]
     hits: list[Hit]
     report: BalanceReport
-    # One list per retriever, only when more than one retriever is enabled.
-    hit_lists: list[list[Hit]]

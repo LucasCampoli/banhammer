@@ -4,9 +4,9 @@ Balance auditor and rules arbiter for Magic: The Gathering cards. The idea: take
 
 ## Status
 
-Phase 1 is a naive RAG pipeline: the whole card text is embedded, similar Modern cards and Comprehensive Rules are retrieved from Pinecone, the card itself is dropped from the hits, and an LLM writes a balance report. OCR still works as a separate stage. Symbols inside the rules text (`{T}`, `{2}{R}`) are not handled yet, and the OCR also picks up flavor text, which hurts the `rules_text` score.
+The pipeline embeds the whole card text, retrieves similar Modern cards and Comprehensive Rules from Pinecone, drops the card itself from the hits, and asks an LLM for a balance report. OCR is a separate stage. Symbols inside the rules text (`{T}`, `{2}{R}`) are not handled yet, and the OCR also picks up flavor text, which hurts the `rules_text` score.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the pipeline and the later phases.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together.
 
 ## Setup
 

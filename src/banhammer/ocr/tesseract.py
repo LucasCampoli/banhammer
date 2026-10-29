@@ -1,23 +1,30 @@
-"""Tesseract backend."""
+"""Read a preprocessed crop with Tesseract."""
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 import numpy as np
 import pytesseract
 from pytesseract import Output
 
-from .base import OCRResult
+
+@dataclass
+class ReadResult:
+    text: str
+    confidence: float | None = None
 
 
-class TesseractBackend:
+class Tesseract:
     def __init__(self, lang: str = "eng", psm: dict[str, int] | None = None,
                  whitelist: dict[str, str] | None = None):
-        self.lang, self.psm, self.whitelist = lang, psm or {}, whitelist or {}
+        self.lang = lang
+        self.psm = psm or {}
+        self.whitelist = whitelist or {}
         if os.environ.get("TESSERACT_CMD"):
             pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_CMD"]
 
-    def read(self, image: np.ndarray, zone: str) -> OCRResult:
+    def read(self, image: np.ndarray, zone: str) -> ReadResult:
         config = f"--psm {self.psm.get(zone, 6)}"
         if zone in self.whitelist:
             config += f" -c tessedit_char_whitelist={self.whitelist[zone]}"
@@ -31,5 +38,5 @@ class TesseractBackend:
             lines.setdefault(key, []).append(word)
             if float(data["conf"][i]) >= 0:
                 confs.append(float(data["conf"][i]) / 100.0)
-        text = "\n".join(" ".join(ws) for ws in lines.values())
-        return OCRResult(text, sum(confs) / len(confs) if confs else None)
+        text = "\n".join(" ".join(words) for words in lines.values())
+        return ReadResult(text, sum(confs) / len(confs) if confs else None)

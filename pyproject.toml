@@ -28,7 +28,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest==8.4.2"]
-hf = ["langchain-huggingface==1.2.3", "sentence-transformers==6.1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

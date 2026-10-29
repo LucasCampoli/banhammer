@@ -1,4 +1,4 @@
-# Naive RAG: full card text, dense retrieval, drop the card itself, LLM judge.
+# Whole card text, dense retrieval, drop the card itself, then the LLM report.
 # The embedding model must match configs/ingest.yaml.
 llm:
   provider: openai
@@ -9,10 +9,4 @@ embeddings:
   model: text-embedding-3-small
 vector_store:
   provider: pinecone
-pipeline:
-  build_query: [full_text]
-  retrieve:
-    - name: dense
-      k: 10
-  filter: [exclude_self]
-  generate: llm_judge
+k: 10
