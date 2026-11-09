@@ -41,6 +41,15 @@ def card_types(type_line: str) -> str:
     return " // ".join(faces)
 
 
+def type_words(type_line: str) -> list[str]:
+    """Supertypes and card types of every face, for metadata filters (``["Legendary", "Creature"]``)."""
+    words: list[str] = []
+    for word in card_types(type_line).replace("//", " ").split():
+        if word not in words:
+            words.append(word)
+    return words
+
+
 def mana_value(cost: str) -> float:
     """Mana value of a cost such as ``{2}{W}{W}`` or ``{2/W}``. ``{X}`` adds nothing."""
     total = 0.0

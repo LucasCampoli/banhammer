@@ -1,4 +1,8 @@
-"""LangGraph for one card: full text, dense search, drop the card itself, LLM report."""
+"""LangGraph for one card: full text, dense search, drop the card itself, LLM report.
+
+Catalog searches are restricted to the audited format before retrieval (`format_filter`), and
+every claim in the report must cite a retrieved hit; claims that do not are discarded.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,7 +16,7 @@ from banhammer.pipeline.state import PipelineState
 from banhammer.providers import StoreFactory, get_embeddings, get_llm
 from banhammer.shared.config import load_env, load_yaml
 
-_SYSTEM = """You are a Magic: The Gathering judge for the Modern format.
+_SYSTEM = """You are a Magic: The Gathering judge for the {format} format.
 You are given a card and numbered reference hits. Card hits are labeled [C1], [C2], ...
 and Comprehensive Rules hits are labeled [R1], [R2], ...
 
@@ -23,7 +27,13 @@ Write a balance report:
 - risk: ok, watch, or likely_ban, and a confidence between 0 and 1.
 
 Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
-A claim with no citation is speculation. Do not invent rules or cards that are not in the hits."""
+Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits.
+Cards marked (banned in ...) are banned in that format."""
+
+
+def format_filter(fmt: str) -> dict:
+    """Pinecone filter for catalog cards legal or banned in the audited format."""
+    return {"formats": {"$in": [fmt]}}
 
 
 def search(stores: StoreFactory, query: Query, k: int) -> list[Hit]:
@@ -87,37 +97,54 @@ def _numbered(hits: list[Hit]) -> tuple[dict[str, str], str]:
             cards += 1
             label = f"C{cards}"
         labels[label] = hit.id
-        labels[label.casefold()] = hit.id
-        lines.append(f"[{label}] {hit.text}")
+        banned = hit.metadata.get("banned") or []
+        flag = f"(banned in {', '.join(banned)}) " if banned else ""
+        lines.append(f"[{label}] {flag}{hit.text}")
     return labels, "\n".join(lines) if lines else "(no hits)"
 
 
-def _remap(citations: list[str], labels: dict[str, str]) -> list[str]:
-    remapped = []
+def _valid(citations: list[str], labels: dict[str, str], prefix: str) -> list[str]:
+    """Hit ids for the citations that point at a real hit of the right kind. The rest are dropped."""
+    ids = []
     for citation in citations:
-        token = citation.strip().strip("[]")
-        remapped.append(labels.get(token) or labels.get(token.casefold()) or token)
-    return remapped
+        token = citation.strip().strip("[]").upper()
+        if token.startswith(prefix) and token in labels and labels[token] not in ids:
+            ids.append(labels[token])
+    return ids
 
 
-def judge(llm: Any, card: CardInput, hits: list[Hit]) -> BalanceReport:
-    """Ask the LLM for a BalanceReport. Bracket labels become hit ids."""
+def validate_citations(report: BalanceReport, labels: dict[str, str]) -> tuple[BalanceReport, int]:
+    """Keep only grounded claims. A wording issue needs a rule hit, a combo needs a card hit.
+
+    Returns the cleaned report and how many claims were discarded.
+    """
+    issues, combos = [], []
+    for issue in report.wording_issues:
+        rule_ids = _valid(issue.rule_ids, labels, "R")
+        if rule_ids:
+            issues.append(issue.model_copy(update={"rule_ids": rule_ids}))
+    for combo in report.combos:
+        card_ids = _valid(combo.card_ids, labels, "C")
+        if card_ids:
+            combos.append(combo.model_copy(update={"card_ids": card_ids}))
+    power = report.power_assessment.model_copy(
+        update={"comparable_ids": _valid(report.power_assessment.comparable_ids, labels, "C")}
+    )
+    dropped = len(report.wording_issues) - len(issues) + len(report.combos) - len(combos)
+    cleaned = report.model_copy(update={"wording_issues": issues, "combos": combos, "power_assessment": power})
+    return cleaned, dropped
+
+
+def judge(llm: Any, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tuple[BalanceReport, int]:
+    """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits."""
     labels, numbered = _numbered(hits)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
     result = llm.with_structured_output(BalanceReport).invoke([
-        SystemMessage(content=_SYSTEM),
+        SystemMessage(content=_SYSTEM.format(format=fmt.title())),
         HumanMessage(content=prompt),
     ])
     report = result if isinstance(result, BalanceReport) else BalanceReport.model_validate(result)
-    data = report.model_dump()
-    for issue in data["wording_issues"]:
-        issue["rule_ids"] = _remap(issue["rule_ids"], labels)
-    for combo in data["combos"]:
-        combo["card_ids"] = _remap(combo["card_ids"], labels)
-    data["power_assessment"]["comparable_ids"] = _remap(
-        data["power_assessment"]["comparable_ids"], labels
-    )
-    return BalanceReport.model_validate(data)
+    return validate_citations(report, labels)
 
 
 def build_graph(config: dict | Path | str):
@@ -128,11 +155,13 @@ def build_graph(config: dict | Path | str):
     stores = StoreFactory(cfg["vector_store"], embeddings, model=model, index_cfg=cfg.get("index"))
     llm = get_llm(cfg["llm"])
     k = int(cfg.get("k", 10))
+    use_format_filter = bool(cfg.get("format_filter", True))
 
     def build_queries(state: PipelineState) -> dict:
         text = state["card"].as_text()
+        fmt = state.get("format") or "modern"
         return {"queries": [
-            Query(text=text, namespace="cards"),
+            Query(text=text, namespace="cards", filter=format_filter(fmt) if use_format_filter else None),
             Query(text=text, namespace="rules"),
         ]}
 
@@ -146,7 +175,8 @@ def build_graph(config: dict | Path | str):
         return {"hits": exclude_self(state["card"], state.get("hits") or [])}
 
     def generate(state: PipelineState) -> dict:
-        return {"report": judge(llm, state["card"], state.get("hits") or [])}
+        report, dropped = judge(llm, state["card"], state.get("hits") or [], state.get("format") or "modern")
+        return {"report": report, "dropped_claims": dropped}
 
     graph = StateGraph(PipelineState)
     graph.add_node("build_queries", build_queries)

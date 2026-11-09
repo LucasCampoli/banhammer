@@ -1,0 +1,14 @@
+# Naive baseline: whole card text, dense retrieval over the whole catalog (the audited
+# format is ignored), drop the card itself, then the LLM report with strict citations.
+# Same as configs/pipeline.yaml except for format_filter.
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: false

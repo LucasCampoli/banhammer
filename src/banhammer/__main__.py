@@ -5,15 +5,15 @@ import argparse
 from pathlib import Path
 
 from banhammer.shared.config import ROOT, load_env
-from banhammer.models import BalanceReport, CardInput
+from banhammer.models import FORMATS, BalanceReport, CardInput
 from banhammer.pipeline import build_graph
 from banhammer.shared.report import render_markdown, report_stem
 
 
-def evaluate(card_path: Path, config_path: Path, out_dir: Path) -> Path:
+def evaluate(card_path: Path, config_path: Path, out_dir: Path, fmt: str = "modern") -> Path:
     load_env()
     card = CardInput.model_validate_json(card_path.read_text(encoding="utf-8"))
-    result = build_graph(config_path).invoke({"card": card, "queries": [], "hits": []})
+    result = build_graph(config_path).invoke({"card": card, "format": fmt, "queries": [], "hits": []})
     report = result["report"]
     if not isinstance(report, BalanceReport):
         report = BalanceReport.model_validate(report)
@@ -22,7 +22,7 @@ def evaluate(card_path: Path, config_path: Path, out_dir: Path) -> Path:
     json_path = out_dir / f"{stem}.json"
     md_path = out_dir / f"{stem}.md"
     json_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    md_path.write_text(render_markdown(card, report), encoding="utf-8")
+    md_path.write_text(render_markdown(card, report, fmt, result.get("dropped_claims", 0)), encoding="utf-8")
     print(f"Wrote {json_path}")
     print(f"Wrote {md_path}")
     return json_path
@@ -37,11 +37,12 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     evaluate_parser = sub.add_parser("evaluate", help="run the pipeline on a card JSON file")
     evaluate_parser.add_argument("card", type=Path)
+    evaluate_parser.add_argument("--format", choices=FORMATS, default="modern", help="format the card is audited against")
     evaluate_parser.add_argument("--config", type=Path, default=ROOT / "configs" / "pipeline.yaml")
     evaluate_parser.add_argument("--out", type=Path, default=ROOT / "outputs" / "reports")
     args = parser.parse_args()
     if args.command == "evaluate":
-        evaluate(args.card, args.config, args.out)
+        evaluate(args.card, args.config, args.out, args.format)
 
 
 if __name__ == "__main__":

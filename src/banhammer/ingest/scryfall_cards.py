@@ -1,4 +1,4 @@
-"""Scryfall oracle cards: Modern-legal and Modern-banned cards, one document each."""
+"""Scryfall oracle cards: cards legal or banned in Modern or Standard, one document each."""
 from __future__ import annotations
 
 import gzip
@@ -8,7 +8,8 @@ from pathlib import Path
 import requests
 from langchain_core.documents import Document
 
-from banhammer.shared.cardtext import card_types, format_card
+from banhammer.models import FORMATS
+from banhammer.shared.cardtext import card_types, format_card, type_words
 from banhammer.shared.documents import clean_metadata
 from banhammer.ingest.http import download, headers
 
@@ -60,8 +61,9 @@ class ScryfallCards:
 def card_to_document(card: dict) -> Document | None:
     if card.get("layout") in DROPPED_LAYOUTS:
         return None
-    modern = (card.get("legalities") or {}).get("modern")
-    if modern not in {"legal", "banned"}:
+    legalities = card.get("legalities") or {}
+    formats = [fmt for fmt in FORMATS if legalities.get(fmt) in {"legal", "banned"}]
+    if not formats:
         return None
     oracle_id = card.get("oracle_id")
     if not oracle_id:
@@ -81,8 +83,10 @@ def card_to_document(card: dict) -> Document | None:
         "cmc": card.get("cmc"),
         "colors": card.get("colors") or [],
         "types": card_types(type_line),
+        "type_words": type_words(type_line),
         "keywords": card.get("keywords") or [],
-        "modern": modern,
+        "formats": formats,
+        "banned": [fmt for fmt in formats if legalities.get(fmt) == "banned"],
         "text": text,
     })
     return Document(id=oracle_id, page_content=text, metadata=metadata)

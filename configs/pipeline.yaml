@@ -1,4 +1,5 @@
-# Whole card text, dense retrieval, drop the card itself, then the LLM report.
+# Version 1: whole card text, dense retrieval restricted to the audited format,
+# drop the card itself, then the LLM report with strict citations.
 # The embedding model must match configs/ingest.yaml.
 llm:
   provider: openai
@@ -10,3 +11,4 @@ embeddings:
 vector_store:
   provider: pinecone
 k: 10
+format_filter: true   # search only cards legal or banned in the audited format

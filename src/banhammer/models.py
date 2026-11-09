@@ -30,6 +30,10 @@ class ZoneBox(BaseModel):
                 round(self.x1 * width), round(self.y1 * height))
 
 
+Format = Literal["modern", "standard"]
+FORMATS: tuple[str, ...] = ("modern", "standard")
+
+
 class OCRCard(BaseModel):
     name: str = ""
     mana_cost: str = ""
@@ -150,14 +154,12 @@ class Hit(BaseModel):
 class WordingIssue(BaseModel):
     description: str
     rule_ids: list[str] = Field(default_factory=list)
-    speculation: bool = False
 
 
 class Combo(BaseModel):
     description: str
     card_ids: list[str] = Field(default_factory=list)
     sequence: list[str] = Field(default_factory=list)
-    speculation: bool = False
 
 
 class PowerAssessment(BaseModel):
@@ -171,13 +173,3 @@ class BalanceReport(BaseModel):
     power_assessment: PowerAssessment = Field(default_factory=PowerAssessment)
     risk: Literal["ok", "watch", "likely_ban"]
     confidence: float = Field(ge=0, le=1)
-
-    @model_validator(mode="after")
-    def _speculation(self) -> BalanceReport:
-        for issue in self.wording_issues:
-            if not issue.rule_ids:
-                issue.speculation = True
-        for combo in self.combos:
-            if not combo.card_ids:
-                combo.speculation = True
-        return self
