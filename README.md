@@ -1,10 +1,10 @@
 # Banhammer
 
-Balance auditor and rules arbiter for Magic: The Gathering cards. The idea: take an image of a new card, read its text with OCR, then use RAG over the Comprehensive Rules and the Scryfall catalog to find wording conflicts and broken combos. Target format is Modern; I prototype with Standard cards.
+Balance auditor and rules arbiter for Magic: The Gathering cards. The idea: take a new card, then use RAG over the Comprehensive Rules and the Scryfall catalog to find wording conflicts and broken combos. A card is audited against Modern or Standard. An OCR stage can read the card from an image.
 
 ## Status
 
-The pipeline embeds the whole card text, retrieves similar Modern cards and Comprehensive Rules from Pinecone, drops the card itself from the hits, and asks an LLM for a balance report. OCR is a separate stage. Symbols inside the rules text (`{T}`, `{2}{R}`) are not handled yet, and the OCR also picks up flavor text, which hurts the `rules_text` score.
+Version 1 (stage 1) is done. The pipeline embeds the whole card text, retrieves similar cards from the audited format and Comprehensive Rules from Pinecone, drops the card itself from the hits, and asks an LLM for a balance report. Claims in the report that do not cite a retrieved rule or card are discarded. OCR is a separate stage. Symbols inside the rules text (`{T}`, `{2}{R}`) are not handled yet, and the OCR also picks up flavor text, which hurts the `rules_text` score.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together.
 
@@ -31,8 +31,8 @@ Copy [.env.example](.env.example) to `.env` and set `BANHAMMER_CONTACT`, `OPENAI
 ```bash
 python -m banhammer.ingest                  # Scryfall bulk + Comprehensive Rules -> data/processed/
 python -m banhammer.index                   # embed data/processed into Pinecone (cards, rules)
-python -m banhammer evaluate path/to/card.json
-python -m banhammer.eval --configs configs/pipeline.yaml
+python -m banhammer evaluate path/to/card.json --format modern   # or standard
+python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml
 
 python scripts/download_samples.py          # ~30 cards into images/samples/
 python scripts/download_mana_symbols.py     # symbol templates into data/mana_templates/
@@ -41,7 +41,9 @@ python scripts/evaluate_ocr.py              # table + outputs/ocr_eval.csv
 pytest
 ```
 
-`evaluate` reads a Scryfall-shaped card JSON and writes `outputs/reports/<card name>.json` and `.md`. `ingest` skips a source whose raw or processed file is already present; pass `--force` to refresh it. The embedding model in `configs/ingest.yaml` and `configs/pipeline.yaml` has to be the same one.
+`evaluate` reads a Scryfall-shaped card JSON and writes `outputs/reports/<card name>.json` and `.md`. `ingest` skips a source whose raw or processed file is already present; pass `--force` to refresh it. Data processed before stage 1 lacks the `formats` metadata, so run `python -m banhammer.ingest --force` and `python -m banhammer.index` again.
+
+`banhammer.eval` prints one row per config and writes every card's result to `outputs/eval/<config>.json`. `configs/naive.yaml` is the baseline without the format filter; `configs/pipeline.yaml` is version 1. The embedding model in `configs/ingest.yaml` and `configs/pipeline.yaml` has to be the same one.
 
 `--debug` saves the zone overlay and the preprocessed crops to `outputs/debug/<card>/`. Use `--photo` for real photos (perspective correction).
 
