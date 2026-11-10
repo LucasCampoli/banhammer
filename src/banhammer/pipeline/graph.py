@@ -22,6 +22,9 @@ Write a balance report:
 - power_assessment: power versus cost compared with the comparable cards retrieved. Cite those cards in comparable_ids.
 - risk: ok, watch, or likely_ban, and a confidence between 0 and 1.
 
+Some card hits are marked (banned in Modern). They cannot be played, so never use them
+as combo pieces. Use them only as precedents: a card close to a banned card is a warning sign.
+
 Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
 A claim with no citation is speculation. Do not invent rules or cards that are not in the hits."""
 
@@ -88,7 +91,8 @@ def _numbered(hits: list[Hit]) -> tuple[dict[str, str], str]:
             label = f"C{cards}"
         labels[label] = hit.id
         labels[label.casefold()] = hit.id
-        lines.append(f"[{label}] {hit.text}")
+        banned = " (banned in Modern)" if hit.metadata.get("modern") == "banned" else ""
+        lines.append(f"[{label}]{banned} {hit.text}")
     return labels, "\n".join(lines) if lines else "(no hits)"
 
 

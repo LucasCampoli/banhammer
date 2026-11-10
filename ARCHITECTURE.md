@@ -29,7 +29,7 @@ The offline part runs once per data refresh. The online part runs once per evalu
 
 Scryfall asks for an identifiable `User-Agent`; it is built from `BANHAMMER_CONTACT`.
 
-Banned cards stay in the catalog on purpose: they are the clearest examples of what breaks the format, and the generator sees them flagged as `banned`.
+Banned cards stay in the catalog on purpose: they are the clearest examples of what breaks the format. The generator sees them marked `(banned in Modern)` and is told to use them only as precedents, never as combo pieces, since they cannot be played.
 
 ## Configuration and secrets
 
