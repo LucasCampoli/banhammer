@@ -1,8 +1,10 @@
 from banhammer.eval.metrics import false_alarm, mean, recall_at_k
 from banhammer.ingest.scryfall_cards import card_to_document
 from banhammer.models import BalanceReport, CardInput, Combo, Hit, PowerAssessment, WordingIssue
-from banhammer.pipeline.graph import format_filter, judge
+from banhammer.pipeline.graph import judge
+from banhammer.pipeline.retrieval import format_filter
 from banhammer.shared.cardtext import type_words
+from fakes import FakeLLM
 
 
 def _hit(hit_id, namespace, name="", banned=None):
@@ -10,21 +12,6 @@ def _hit(hit_id, namespace, name="", banned=None):
     if banned:
         metadata["banned"] = banned
     return Hit(id=hit_id, namespace=namespace, text=f"{hit_id} text", metadata=metadata, source="dense")
-
-
-class FakeLLM:
-    """Stands in for ChatOpenAI: returns a fixed report and keeps the prompt it was sent."""
-
-    def __init__(self, report):
-        self.report = report
-        self.messages = None
-
-    def with_structured_output(self, schema):
-        return self
-
-    def invoke(self, messages):
-        self.messages = messages
-        return self.report
 
 
 def test_judge_drops_uncited_and_invented_claims():

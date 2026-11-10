@@ -151,6 +151,43 @@ class Hit(BaseModel):
     source: str
 
 
+class Ability(BaseModel):
+    """One ability of the evaluated card, split into functional primitives."""
+
+    text: str = Field(description="The ability exactly as written on the card.")
+    trigger: str = Field("", description="What makes it happen (e.g. 'whenever an opponent draws a card'). "
+                                         "Empty for static and activated abilities.")
+    cost: str = Field("", description="What must be paid to activate it (e.g. '{1}, {T}, sacrifice a creature'). "
+                                      "Empty if it has no cost.")
+    effect: str = Field(description="What the ability does when it resolves or applies.")
+    restrictions: str = Field("", description="Limits on when or how often it works "
+                                              "(e.g. 'only as a sorcery', 'once each turn'). Empty if none.")
+
+
+class Counterpart(BaseModel):
+    """The other half of a potential combo, described as the card it would take."""
+
+    description: str = Field(description="Oracle-style English rules text of an existing card that would complete "
+                                         "a combo with the evaluated card (the other half of the combo, not a "
+                                         "similar card).")
+    card_type: str | None = Field(None, description="One card type word the counterpart must have: Creature, "
+                                                    "Artifact, Enchantment, Land, Instant, Sorcery or "
+                                                    "Planeswalker. Null if any type works.")
+    max_mana_value: int | None = Field(None, description="Highest mana value that keeps the combo practical. "
+                                                         "Null if it does not matter.")
+
+
+class CardAnalysis(BaseModel):
+    """Decomposition of the evaluated card used to expand the retrieval queries."""
+
+    abilities: list[Ability] = Field(default_factory=list, description="Every ability of the card.")
+    counterparts: list[Counterpart] = Field(default_factory=list,
+                                            description="Up to 5 mechanical counterparts that would combo with it.")
+    rules_topics: list[str] = Field(default_factory=list,
+                                    description="Up to 5 Comprehensive Rules topics its wording depends on "
+                                                "(keywords, token types, timing, replacement effects).")
+
+
 class WordingIssue(BaseModel):
     description: str
     rule_ids: list[str] = Field(default_factory=list)

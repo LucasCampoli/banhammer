@@ -1,0 +1,15 @@
+# Ablation step 1: version 1 (configs/pipeline.yaml) + decomposition and query expansion.
+# The LLM splits the card into primitives, mechanical counterparts and rules topics; each one
+# becomes an extra query and the results of each namespace are fused with RRF.
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: true
+decompose: true

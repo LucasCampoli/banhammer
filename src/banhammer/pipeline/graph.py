@@ -1,7 +1,9 @@
-"""LangGraph for one card: full text, dense search, drop the card itself, LLM report.
+"""LangGraph for one card: build queries, search, drop the card itself, LLM report.
 
 Catalog searches are restricted to the audited format before retrieval (`format_filter`), and
-every claim in the report must cite a retrieved hit; claims that do not are discarded.
+every claim in the report must cite a retrieved hit; claims that do not are discarded. With
+`decompose: true` the card is split into primitives first and the queries are expanded; the
+results of several queries in one namespace are merged with reciprocal rank fusion.
 """
 from __future__ import annotations
 
@@ -12,6 +14,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from banhammer.models import BalanceReport, CardInput, Hit, Query
+from banhammer.pipeline.query import build_queries
+from banhammer.pipeline.retrieval import fuse_by_namespace
 from banhammer.pipeline.state import PipelineState
 from banhammer.providers import StoreFactory, get_embeddings, get_llm
 from banhammer.shared.config import load_env, load_yaml
@@ -29,11 +33,6 @@ Write a balance report:
 Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
 Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits.
 Cards marked (banned in ...) are banned in that format."""
-
-
-def format_filter(fmt: str) -> dict:
-    """Pinecone filter for catalog cards legal or banned in the audited format."""
-    return {"formats": {"$in": [fmt]}}
 
 
 def search(stores: StoreFactory, query: Query, k: int) -> list[Hit]:
@@ -155,21 +154,16 @@ def build_graph(config: dict | Path | str):
     stores = StoreFactory(cfg["vector_store"], embeddings, model=model, index_cfg=cfg.get("index"))
     llm = get_llm(cfg["llm"])
     k = int(cfg.get("k", 10))
-    use_format_filter = bool(cfg.get("format_filter", True))
 
-    def build_queries(state: PipelineState) -> dict:
-        text = state["card"].as_text()
-        fmt = state.get("format") or "modern"
-        return {"queries": [
-            Query(text=text, namespace="cards", filter=format_filter(fmt) if use_format_filter else None),
-            Query(text=text, namespace="rules"),
-        ]}
+    def make_queries(state: PipelineState) -> dict:
+        queries, analysis = build_queries(state["card"], state.get("format") or "modern", cfg, llm)
+        return {"queries": queries, "analysis": analysis}
 
     def retrieve(state: PipelineState) -> dict:
-        hits = []
+        lists: dict[str, list[list[Hit]]] = {}
         for query in state.get("queries") or []:
-            hits.extend(search(stores, query, k))
-        return {"hits": hits}
+            lists.setdefault(query.namespace, []).append(search(stores, query, k))
+        return {"hits": fuse_by_namespace(lists)}
 
     def drop_self(state: PipelineState) -> dict:
         return {"hits": exclude_self(state["card"], state.get("hits") or [])}
@@ -179,7 +173,7 @@ def build_graph(config: dict | Path | str):
         return {"report": report, "dropped_claims": dropped}
 
     graph = StateGraph(PipelineState)
-    graph.add_node("build_queries", build_queries)
+    graph.add_node("build_queries", make_queries)
     graph.add_node("retrieve", retrieve)
     graph.add_node("exclude_self", drop_self)
     graph.add_node("generate", generate)
