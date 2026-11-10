@@ -2,7 +2,7 @@ from banhammer.eval.metrics import false_alarm, mean, recall_at_k
 from banhammer.ingest.scryfall_cards import card_to_document
 from banhammer.models import BalanceReport, CardInput, Combo, Hit, PowerAssessment, WordingIssue
 from banhammer.pipeline.graph import judge
-from banhammer.pipeline.retrieval import format_filter
+from banhammer.pipeline.retrieval import card_filter
 from banhammer.shared.cardtext import type_words
 from fakes import FakeLLM
 
@@ -47,8 +47,8 @@ def test_judge_prompt_names_format_and_flags_banned_cards():
     assert "[C1] (banned in modern) oid-1 text" in human
 
 
-def test_format_filter():
-    assert format_filter("standard") == {"formats": {"$in": ["standard"]}}
+def test_card_filter_with_format_only_matches_version_1():
+    assert card_filter("standard") == {"formats": {"$in": ["standard"]}}
 
 
 def _scryfall(**legalities):

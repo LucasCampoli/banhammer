@@ -6,7 +6,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from banhammer.models import Ability, CardAnalysis, CardInput, Query
-from banhammer.pipeline.retrieval import format_filter
+from banhammer.pipeline.retrieval import card_filter
 
 MAX_COUNTERPARTS = 5
 MAX_RULES_TOPICS = 5
@@ -32,7 +32,7 @@ def base_queries(card: CardInput, fmt: str, use_format_filter: bool = True) -> l
     """Version 1: the whole card text, once against the catalog and once against the rules."""
     text = card.as_text()
     return [
-        Query(text=text, namespace="cards", filter=format_filter(fmt) if use_format_filter else None),
+        Query(text=text, namespace="cards", filter=card_filter(fmt) if use_format_filter else None),
         Query(text=text, namespace="rules"),
     ]
 
@@ -61,16 +61,23 @@ def expanded_queries(
     analysis: CardAnalysis,
     fmt: str,
     use_format_filter: bool = True,
+    use_type_mana_filter: bool = False,
 ) -> list[Query]:
-    """Version 1 queries plus one rules query per ability and topic, one catalog query per counterpart."""
+    """Version 1 queries plus one rules query per ability and topic, one catalog query per counterpart.
+
+    With ``use_type_mana_filter`` a counterpart query is also restricted to the card type and
+    maximum mana value the analysis gave for it.
+    """
     queries = base_queries(card, fmt, use_format_filter)
     queries += [Query(text=ability_text(ability), namespace="rules") for ability in analysis.abilities]
     queries += [Query(text=topic, namespace="rules") for topic in analysis.rules_topics[:MAX_RULES_TOPICS]]
-    card_filter = format_filter(fmt) if use_format_filter else None
-    queries += [
-        Query(text=counterpart.description, namespace="cards", filter=card_filter)
-        for counterpart in analysis.counterparts[:MAX_COUNTERPARTS]
-    ]
+    fmt_or_none = fmt if use_format_filter else None
+    for counterpart in analysis.counterparts[:MAX_COUNTERPARTS]:
+        if use_type_mana_filter:
+            flt = card_filter(fmt_or_none, counterpart.card_type, counterpart.max_mana_value)
+        else:
+            flt = card_filter(fmt_or_none)
+        queries.append(Query(text=counterpart.description, namespace="cards", filter=flt))
     return queries
 
 
@@ -80,4 +87,5 @@ def build_queries(card: CardInput, fmt: str, cfg: dict, llm: Any) -> tuple[list[
     if not cfg.get("decompose", False):
         return base_queries(card, fmt, use_format_filter), None
     analysis = decompose(llm, card)
-    return expanded_queries(card, analysis, fmt, use_format_filter), analysis
+    use_type_mana_filter = bool(cfg.get("type_mana_filter", False))
+    return expanded_queries(card, analysis, fmt, use_format_filter, use_type_mana_filter), analysis

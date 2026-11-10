@@ -15,9 +15,31 @@ RRF_C = 60
 _TOKEN = re.compile(r"[a-z0-9]+")
 
 
-def format_filter(fmt: str) -> dict:
-    """Pinecone filter for catalog cards legal or banned in the audited format."""
-    return {"formats": {"$in": [fmt]}}
+def card_filter(
+    fmt: str | None = None,
+    card_type: str | None = None,
+    max_mana_value: int | None = None,
+) -> dict | None:
+    """Pinecone filter for catalog cards, applied before retrieval.
+
+    Args:
+        fmt: Keep cards legal or banned in this format.
+        card_type: Keep cards with this card type word (``"creature"`` matches ``"Creature"``).
+        max_mana_value: Keep cards whose mana value is at most this.
+
+    Returns:
+        A single clause, several clauses under ``$and``, or None when nothing is restricted.
+    """
+    clauses: list[dict] = []
+    if fmt:
+        clauses.append({"formats": {"$in": [fmt]}})
+    if card_type:
+        clauses.append({"type_words": {"$in": [card_type.strip().title()]}})
+    if max_mana_value is not None:
+        clauses.append({"cmc": {"$lte": float(max_mana_value)}})
+    if not clauses:
+        return None
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
 
 
 def matches(metadata: dict[str, Any], flt: dict[str, Any] | None) -> bool:

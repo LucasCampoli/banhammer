@@ -1,6 +1,6 @@
 """LangGraph for one card: build queries, search, drop the card itself, LLM report.
 
-Catalog searches are restricted to the audited format before retrieval (`format_filter`), and
+Catalog searches are restricted to the audited format before retrieval (`card_filter`), and
 every claim in the report must cite a retrieved hit; claims that do not are discarded. With
 `decompose: true` the card is split into primitives first and the queries are expanded; the
 results of several queries in one namespace are merged with reciprocal rank fusion. With

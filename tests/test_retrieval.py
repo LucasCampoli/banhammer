@@ -3,7 +3,7 @@ import json
 import pytest
 
 from banhammer.models import Hit, Query
-from banhammer.pipeline.retrieval import BM25Index, fuse_by_namespace, matches, rrf, tokenize
+from banhammer.pipeline.retrieval import BM25Index, card_filter, fuse_by_namespace, matches, rrf, tokenize
 
 
 def _hit(hit_id, namespace="cards", source="dense", score=None):
@@ -83,3 +83,23 @@ def test_bm25_respects_filter_and_k(bm25):
     query = Query(text="sacrifice a creature", namespace="cards", filter={"formats": {"$in": ["standard"]}})
     assert [hit.metadata["name"] for hit in bm25.search(query, k=1)] == ["Seer"]
     assert bm25.search(Query(text="!!!", namespace="cards"), k=5) == []
+
+
+def test_card_filter_combinations():
+    assert card_filter() is None
+    assert card_filter("modern") == {"formats": {"$in": ["modern"]}}
+    assert card_filter(card_type="creature") == {"type_words": {"$in": ["Creature"]}}
+    assert card_filter(max_mana_value=3) == {"cmc": {"$lte": 3.0}}
+    assert card_filter("standard", "artifact", 2) == {"$and": [
+        {"formats": {"$in": ["standard"]}},
+        {"type_words": {"$in": ["Artifact"]}},
+        {"cmc": {"$lte": 2.0}},
+    ]}
+
+
+def test_matches_accepts_card_filter_output():
+    meta = {"formats": ["modern"], "type_words": ["Artifact", "Creature"], "cmc": 2.0}
+    assert matches(meta, card_filter("modern", "creature", 2))
+    assert not matches(meta, card_filter("modern", "creature", 1))
+    assert not matches(meta, card_filter("standard", "creature", 2))
+    assert not matches(meta, card_filter("modern", "land"))

@@ -1,0 +1,17 @@
+# Ablation step 3: step 2 (ablation/2_hybrid.yaml) + type and mana value filters on the
+# counterpart queries. Each counterpart the LLM describes can name a card type and a maximum
+# mana value; its catalog query is restricted to them before retrieval (dense and BM25).
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: true
+decompose: true
+hybrid: true
+type_mana_filter: true   # counterpart queries: type_words $in [type], cmc $lte max mana value

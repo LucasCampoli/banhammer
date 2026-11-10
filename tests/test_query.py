@@ -60,3 +60,16 @@ def test_build_queries_with_decompose_keeps_analysis():
     queries, analysis = build_queries(CARD, "modern", {"decompose": True}, FakeLLM(ANALYSIS))
     assert analysis == ANALYSIS
     assert len(queries) == 2 + 2 + 1
+
+
+def test_type_mana_filter_restricts_counterparts_only():
+    queries = expanded_queries(CARD, ANALYSIS, "modern", use_type_mana_filter=True)
+    assert queries[0].filter == {"formats": {"$in": ["modern"]}}
+    assert queries[-1].filter == {"$and": [
+        {"formats": {"$in": ["modern"]}},
+        {"type_words": {"$in": ["Instant"]}},
+        {"cmc": {"$lte": 2.0}},
+    ]}
+    unrestricted = CardAnalysis(counterparts=[Counterpart(description="any")])
+    assert expanded_queries(CARD, unrestricted, "modern", use_type_mana_filter=True)[-1].filter == {
+        "formats": {"$in": ["modern"]}}
