@@ -67,7 +67,7 @@ Chat and embeddings both go through OpenAI (`gpt-4o-mini` and `text-embedding-3-
 Each source has `download()` and `normalize()`. Raw files go to `data/raw/` and normalized records to `data/processed/<namespace>.jsonl`. A source is skipped when its file is already there.
 
 - **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types`, `keywords`, `modern` (`legal` or `banned`) and the text.
-- **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title`, `section` and the text. Rules are split on the rule number at the start of each line.
+- **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title`, `section` and the text. Rules are split on the rule number at the start of each line; chapter headings (`2. Parts of a Card`) are skipped.
 
 Cards and rules are short, so each record is one document. Nothing is chunked further.
 

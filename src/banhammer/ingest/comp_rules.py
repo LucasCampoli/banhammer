@@ -15,6 +15,7 @@ RULES_PAGE = "https://magic.wizards.com/en/rules"
 _TXT_LINK = re.compile(r'href="([^"]+\.txt[^"]*)"', re.IGNORECASE)
 _RULE = re.compile(r"^(\d{3}\.\d+[a-z]?)(?:\.)?\s+(.*)$")
 _SECTION = re.compile(r"^(\d{3})\.\s+(\S.*)$")
+_CHAPTER = re.compile(r"^\d\.\s+\S")
 
 
 class CompRules:
@@ -92,6 +93,9 @@ def rules_to_documents(text: str) -> list[Document]:
         if section_match:
             flush()
             section = f"{section_match.group(1)}. {section_match.group(2).strip()}"
+            continue
+        if _CHAPTER.match(line):
+            flush()
             continue
         if current is None:
             continue
