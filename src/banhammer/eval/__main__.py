@@ -28,6 +28,7 @@ def score_card(graph, row: dict) -> dict:
     card = CardInput.model_validate(row["card"])
     fmt = row.get("format", "modern")
     result = graph.invoke({"card": card, "format": fmt, "queries": [], "hits": []})
+    # Final card order, after fusion and reranking; recall@25 covers the reranker's candidates.
     hits = [hit if isinstance(hit, Hit) else Hit.model_validate(hit) for hit in result.get("hits") or []]
     report = result["report"]
     if not isinstance(report, BalanceReport):
@@ -43,6 +44,7 @@ def score_card(graph, row: dict) -> dict:
         "false_alarm": false_alarm(report, expected),
         "recall@5": recall_at_k(hits, pieces, 5) if pieces else None,
         "recall@10": recall_at_k(hits, pieces, 10) if pieces else None,
+        "recall@25": recall_at_k(hits, pieces, 25) if pieces else None,
         "dropped_claims": result.get("dropped_claims", 0),
         "retrieved_cards": card_names(hits)[:10],
         "report": report.model_dump(),
@@ -59,6 +61,7 @@ def score_config(config_path: Path, gold_path: Path, out_dir: Path) -> dict:
         "config": config_path.stem,
         "recall@5": mean([c["recall@5"] for c in cards]),
         "recall@10": mean([c["recall@10"] for c in cards]),
+        "recall@25": mean([c["recall@25"] for c in cards]),
         "risk_accuracy": mean([c["risk_match"] for c in cards]),
         "false_alarm_rate": mean([c["false_alarm"] for c in cards]),
         "dropped_per_card": mean([c["dropped_claims"] for c in cards]),
@@ -72,7 +75,7 @@ def score_config(config_path: Path, gold_path: Path, out_dir: Path) -> dict:
     return summary
 
 
-COLUMNS = ("recall@5", "recall@10", "risk_accuracy", "false_alarm_rate", "dropped_per_card")
+COLUMNS = ("recall@5", "recall@10", "recall@25", "risk_accuracy", "false_alarm_rate", "dropped_per_card")
 
 
 def render_table(rows: list[dict]) -> None:
