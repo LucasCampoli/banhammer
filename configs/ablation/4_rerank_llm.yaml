@@ -1,0 +1,21 @@
+# Ablation step 4: step 3 (ablation/3_type_mana_filter.yaml) + LLM reranking.
+# The first 25 fused cards are scored by the LLM (how likely each one combos with the card) and
+# only the top 5 reach the judge. This row changes two things at once, rerank and context_cards,
+# because the proposal sends the top 5 to the judge.
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: true
+decompose: true
+hybrid: true
+type_mana_filter: true   # counterpart queries: type_words $in [type], cmc $lte max mana value
+rerank: llm
+candidates: 25      # fused cards that go to the reranker
+context_cards: 5    # cards the judge sees after reranking

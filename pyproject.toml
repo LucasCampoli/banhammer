@@ -29,6 +29,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest==8.4.2"]
+# Cross-encoder reranker (rerank: cross_encoder). Heavy: pulls in torch.
+rerank = ["sentence-transformers==3.4.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -4,7 +4,9 @@ Catalog searches are restricted to the audited format before retrieval (`card_fi
 every claim in the report must cite a retrieved hit; claims that do not are discarded. With
 `decompose: true` the card is split into primitives first and the queries are expanded; the
 results of several queries in one namespace are merged with reciprocal rank fusion. With
-`hybrid: true` every catalog query also runs against a BM25 index of the catalog.
+`hybrid: true` every catalog query also runs against a BM25 index of the catalog. With
+`rerank: llm | cross_encoder` the first `candidates` cards are reordered, and the judge sees only
+the first `context_cards` of them.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from langgraph.graph import END, START, StateGraph
 
 from banhammer.models import BalanceReport, CardInput, Hit, Query
 from banhammer.pipeline.query import build_queries
+from banhammer.pipeline.rerank import cross_encoder_rerank, llm_rerank, rerank_cards
 from banhammer.pipeline.retrieval import BM25Index, fuse_by_namespace
 from banhammer.pipeline.state import PipelineState
 from banhammer.providers import StoreFactory, get_embeddings, get_llm
@@ -103,6 +106,20 @@ def _numbered(hits: list[Hit]) -> tuple[dict[str, str], str]:
     return labels, "\n".join(lines) if lines else "(no hits)"
 
 
+def judge_context(hits: list[Hit], context_cards: int | None) -> list[Hit]:
+    """Every rule hit and the first ``context_cards`` card hits (all of them when None), in order."""
+    if context_cards is None:
+        return hits
+    kept, cards = [], 0
+    for hit in hits:
+        if hit.namespace == "cards":
+            cards += 1
+            if cards > context_cards:
+                continue
+        kept.append(hit)
+    return kept
+
+
 def _valid(citations: list[str], labels: dict[str, str], prefix: str) -> list[str]:
     """Hit ids for the citations that point at a real hit of the right kind. The rest are dropped."""
     ids = []
@@ -147,6 +164,9 @@ def judge(llm: Any, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tu
     return validate_citations(report, labels)
 
 
+RERANKERS = ("none", "llm", "cross_encoder")
+
+
 def _processed_dir(cfg: dict) -> Path:
     path = Path(cfg.get("processed_dir", "data/processed"))
     return path if path.is_absolute() else ROOT / path
@@ -161,6 +181,12 @@ def build_graph(config: dict | Path | str):
     llm = get_llm(cfg["llm"])
     k = int(cfg.get("k", 10))
     bm25 = BM25Index(_processed_dir(cfg) / "cards.jsonl") if cfg.get("hybrid", False) else None
+    reranker = str(cfg.get("rerank") or "none")
+    if reranker not in RERANKERS:
+        raise ValueError(f"rerank must be one of {', '.join(RERANKERS)}, got {reranker!r}")
+    candidates = int(cfg.get("candidates", 25))
+    context_cards = cfg.get("context_cards")
+    context_cards = None if context_cards is None else int(context_cards)
 
     def make_queries(state: PipelineState) -> dict:
         queries, analysis = build_queries(state["card"], state.get("format") or "modern", cfg, llm)
@@ -177,18 +203,33 @@ def build_graph(config: dict | Path | str):
     def drop_self(state: PipelineState) -> dict:
         return {"hits": exclude_self(state["card"], state.get("hits") or [])}
 
+    def rerank(state: PipelineState) -> dict:
+        if reranker == "none":
+            return {}
+        card = state["card"]
+        if reranker == "llm":
+            def reorder(hits: list[Hit]) -> list[Hit]:
+                return llm_rerank(llm, card, hits)
+        else:
+            def reorder(hits: list[Hit]) -> list[Hit]:
+                return cross_encoder_rerank(card, hits)
+        return {"hits": rerank_cards(state.get("hits") or [], reorder, candidates)}
+
     def generate(state: PipelineState) -> dict:
-        report, dropped = judge(llm, state["card"], state.get("hits") or [], state.get("format") or "modern")
+        hits = judge_context(state.get("hits") or [], context_cards)
+        report, dropped = judge(llm, state["card"], hits, state.get("format") or "modern")
         return {"report": report, "dropped_claims": dropped}
 
     graph = StateGraph(PipelineState)
     graph.add_node("build_queries", make_queries)
     graph.add_node("retrieve", retrieve)
     graph.add_node("exclude_self", drop_self)
+    graph.add_node("rerank", rerank)
     graph.add_node("generate", generate)
     graph.add_edge(START, "build_queries")
     graph.add_edge("build_queries", "retrieve")
     graph.add_edge("retrieve", "exclude_self")
-    graph.add_edge("exclude_self", "generate")
+    graph.add_edge("exclude_self", "rerank")
+    graph.add_edge("rerank", "generate")
     graph.add_edge("generate", END)
     return graph.compile()

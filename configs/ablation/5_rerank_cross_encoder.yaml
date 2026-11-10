@@ -1,0 +1,19 @@
+# Ablation step 5: alternative to step 4 with a pretrained cross-encoder as the reranker
+# (cross-encoder/ms-marco-MiniLM-L-6-v2). Needs the extra: pip install -e ".[rerank]".
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: true
+decompose: true
+hybrid: true
+type_mana_filter: true   # counterpart queries: type_words $in [type], cmc $lte max mana value
+rerank: cross_encoder
+candidates: 25      # fused cards that go to the reranker
+context_cards: 5    # cards the judge sees after reranking
