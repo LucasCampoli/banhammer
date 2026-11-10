@@ -3,7 +3,8 @@
 Catalog searches are restricted to the audited format before retrieval (`format_filter`), and
 every claim in the report must cite a retrieved hit; claims that do not are discarded. With
 `decompose: true` the card is split into primitives first and the queries are expanded; the
-results of several queries in one namespace are merged with reciprocal rank fusion.
+results of several queries in one namespace are merged with reciprocal rank fusion. With
+`hybrid: true` every catalog query also runs against a BM25 index of the catalog.
 """
 from __future__ import annotations
 
@@ -15,10 +16,10 @@ from langgraph.graph import END, START, StateGraph
 
 from banhammer.models import BalanceReport, CardInput, Hit, Query
 from banhammer.pipeline.query import build_queries
-from banhammer.pipeline.retrieval import fuse_by_namespace
+from banhammer.pipeline.retrieval import BM25Index, fuse_by_namespace
 from banhammer.pipeline.state import PipelineState
 from banhammer.providers import StoreFactory, get_embeddings, get_llm
-from banhammer.shared.config import load_env, load_yaml
+from banhammer.shared.config import ROOT, load_env, load_yaml
 
 _SYSTEM = """You are a Magic: The Gathering judge for the {format} format.
 You are given a card and numbered reference hits. Card hits are labeled [C1], [C2], ...
@@ -146,6 +147,11 @@ def judge(llm: Any, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tu
     return validate_citations(report, labels)
 
 
+def _processed_dir(cfg: dict) -> Path:
+    path = Path(cfg.get("processed_dir", "data/processed"))
+    return path if path.is_absolute() else ROOT / path
+
+
 def build_graph(config: dict | Path | str):
     load_env()
     cfg = config if isinstance(config, dict) else load_yaml(config)
@@ -154,6 +160,7 @@ def build_graph(config: dict | Path | str):
     stores = StoreFactory(cfg["vector_store"], embeddings, model=model, index_cfg=cfg.get("index"))
     llm = get_llm(cfg["llm"])
     k = int(cfg.get("k", 10))
+    bm25 = BM25Index(_processed_dir(cfg) / "cards.jsonl") if cfg.get("hybrid", False) else None
 
     def make_queries(state: PipelineState) -> dict:
         queries, analysis = build_queries(state["card"], state.get("format") or "modern", cfg, llm)
@@ -163,6 +170,8 @@ def build_graph(config: dict | Path | str):
         lists: dict[str, list[list[Hit]]] = {}
         for query in state.get("queries") or []:
             lists.setdefault(query.namespace, []).append(search(stores, query, k))
+            if bm25 is not None and query.namespace == "cards":
+                lists["cards"].append(bm25.search(query, k))
         return {"hits": fuse_by_namespace(lists)}
 
     def drop_self(state: PipelineState) -> dict:

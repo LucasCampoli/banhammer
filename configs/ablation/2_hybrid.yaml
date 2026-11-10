@@ -1,0 +1,16 @@
+# Ablation step 2: step 1 (ablation/1_decompose.yaml) + hybrid dense + BM25 search in the catalog.
+# Every catalog query runs twice, dense in Pinecone and lexical with BM25, and all lists are
+# fused with RRF. BM25 needs data/processed/cards.jsonl (python -m banhammer.ingest).
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: true
+decompose: true
+hybrid: true   # catalog queries also run against BM25 over data/processed/cards.jsonl

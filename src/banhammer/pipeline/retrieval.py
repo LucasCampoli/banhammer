@@ -1,14 +1,90 @@
-"""Retrieval helpers: catalog filters and reciprocal rank fusion."""
+"""Retrieval helpers: catalog filters, BM25 over the catalog and reciprocal rank fusion."""
 from __future__ import annotations
 
-from banhammer.models import Hit
+import re
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from rank_bm25 import BM25Okapi
+
+from banhammer.models import Hit, Query
+from banhammer.shared.documents import read_jsonl
 
 RRF_C = 60
+_TOKEN = re.compile(r"[a-z0-9]+")
 
 
 def format_filter(fmt: str) -> dict:
     """Pinecone filter for catalog cards legal or banned in the audited format."""
     return {"formats": {"$in": [fmt]}}
+
+
+def matches(metadata: dict[str, Any], flt: dict[str, Any] | None) -> bool:
+    """Evaluate a Pinecone metadata filter in Python.
+
+    Supports ``$and``, ``$in`` (a list field matches when any of its items is in the list) and
+    ``$lte``. A missing field never matches a condition.
+
+    Raises:
+        ValueError: If the filter uses another operator.
+    """
+    if not flt:
+        return True
+    for key, condition in flt.items():
+        if key == "$and":
+            if not all(matches(metadata, clause) for clause in condition):
+                return False
+            continue
+        value = metadata.get(key)
+        for op, arg in condition.items():
+            if op == "$in":
+                values = value if isinstance(value, list) else [value]
+                if not any(item in arg for item in values if item is not None):
+                    return False
+            elif op == "$lte":
+                if value is None or float(value) > float(arg):
+                    return False
+            else:
+                raise ValueError(f"unsupported filter operator {op!r}")
+    return True
+
+
+def tokenize(text: str) -> list[str]:
+    """Lowercase alphanumeric tokens, for BM25."""
+    return _TOKEN.findall(text.lower())
+
+
+class BM25Index:
+    """Lexical BM25 index over the processed catalog (``cards.jsonl``), built in memory."""
+
+    def __init__(self, path: Path | str):
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"{path} not found; run `python -m banhammer.ingest` first (hybrid: true)")
+        self.docs = read_jsonl(path)
+        if not self.docs:
+            raise ValueError(f"no cards in {path}")
+        self.bm25 = BM25Okapi([tokenize(doc.page_content) for doc in self.docs])
+
+    def search(self, query: Query, k: int) -> list[Hit]:
+        """Top-k cards by BM25 score that pass ``query.filter``. Cards with score 0 are skipped."""
+        tokens = tokenize(query.text)
+        if not tokens:
+            return []
+        scores = self.bm25.get_scores(tokens)
+        hits: list[Hit] = []
+        for index in np.argsort(-scores, kind="stable"):
+            if len(hits) == k or scores[index] <= 0:
+                break
+            doc = self.docs[index]
+            if not matches(doc.metadata, query.filter):
+                continue
+            metadata = dict(doc.metadata)
+            metadata.setdefault("text", doc.page_content)
+            hits.append(Hit(id=str(doc.id), namespace="cards", text=doc.page_content,
+                            metadata=metadata, score=float(scores[index]), source="bm25"))
+        return hits
 
 
 def rrf(lists: list[list[Hit]], c: int = RRF_C) -> list[Hit]:
