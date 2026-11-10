@@ -89,7 +89,7 @@ The record id is the `oracle_id` for cards and the rule number for rules, so re-
 1. **`build_queries`**. One query per namespace, both using the whole card text.
 2. **`retrieve`**. Similarity search in Pinecone, top `k` per query (10 by default). A metadata filter on the query is passed through to Pinecone.
 3. **`exclude_self`**. Drops hits whose name is the evaluated card, or one of its faces.
-4. **`generate`**. Numbers the hits `[C1]`, `[R1]`, … and asks the LLM for a `BalanceReport`. The labels in the answer are replaced with the real hit ids.
+4. **`generate`**. Numbers the hits `[C1]`, `[R1]`, …, marks banned cards, and asks the LLM for a `BalanceReport`. The labels in the answer are replaced with the real hit ids; a label that matches no hit is dropped, so a claim that only cites invented labels ends up marked as speculation.
 
 `python -m banhammer evaluate <card.json>` runs the graph and writes `outputs/reports/<card name>.json` and `.md`.
 

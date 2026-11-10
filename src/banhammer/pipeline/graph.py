@@ -78,7 +78,8 @@ def describe(card: CardInput) -> str:
     return text if not details else f"{text}\n" + "; ".join(details)
 
 
-def _numbered(hits: list[Hit]) -> tuple[dict[str, str], str]:
+def number_hits(hits: list[Hit]) -> tuple[dict[str, str], str]:
+    """Label hits C1, C2, ... and R1, R2, ... Returns label -> hit id, and the prompt block."""
     labels: dict[str, str] = {}
     lines: list[str] = []
     cards = rules = 0
@@ -90,23 +91,24 @@ def _numbered(hits: list[Hit]) -> tuple[dict[str, str], str]:
             cards += 1
             label = f"C{cards}"
         labels[label] = hit.id
-        labels[label.casefold()] = hit.id
         banned = " (banned in Modern)" if hit.metadata.get("modern") == "banned" else ""
         lines.append(f"[{label}]{banned} {hit.text}")
     return labels, "\n".join(lines) if lines else "(no hits)"
 
 
-def _remap(citations: list[str], labels: dict[str, str]) -> list[str]:
+def remap_citations(citations: list[str], labels: dict[str, str]) -> list[str]:
+    """Replace labels with hit ids. A label that matches no hit is dropped, so it never counts as a citation."""
     remapped = []
     for citation in citations:
-        token = citation.strip().strip("[]")
-        remapped.append(labels.get(token) or labels.get(token.casefold()) or token)
+        label = citation.strip().strip("[]").upper()
+        if label in labels:
+            remapped.append(labels[label])
     return remapped
 
 
 def judge(llm: Any, card: CardInput, hits: list[Hit]) -> BalanceReport:
     """Ask the LLM for a BalanceReport. Bracket labels become hit ids."""
-    labels, numbered = _numbered(hits)
+    labels, numbered = number_hits(hits)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
     result = llm.with_structured_output(BalanceReport).invoke([
         SystemMessage(content=_SYSTEM),
@@ -115,10 +117,10 @@ def judge(llm: Any, card: CardInput, hits: list[Hit]) -> BalanceReport:
     report = result if isinstance(result, BalanceReport) else BalanceReport.model_validate(result)
     data = report.model_dump()
     for issue in data["wording_issues"]:
-        issue["rule_ids"] = _remap(issue["rule_ids"], labels)
+        issue["rule_ids"] = remap_citations(issue["rule_ids"], labels)
     for combo in data["combos"]:
-        combo["card_ids"] = _remap(combo["card_ids"], labels)
-    data["power_assessment"]["comparable_ids"] = _remap(
+        combo["card_ids"] = remap_citations(combo["card_ids"], labels)
+    data["power_assessment"]["comparable_ids"] = remap_citations(
         data["power_assessment"]["comparable_ids"], labels
     )
     return BalanceReport.model_validate(data)
