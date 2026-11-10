@@ -25,7 +25,7 @@ The offline part runs once per data refresh. The online part runs once per evalu
 | Source | Where it comes from | What is kept |
 | --- | --- | --- |
 | Card catalog | Scryfall bulk data, `oracle_cards` file. The download URL is read from `https://api.scryfall.com/bulk-data` (field `jsonl_download_uri`, gzipped JSONL, one card per line). | One record per Oracle card that is `legal` or `banned` in Modern. Non-playable layouts (`art_series`, `token`, `double_faced_token`, `emblem`, `planar`, `scheme`, `vanguard`, `front_card`) are dropped. |
-| Comprehensive Rules | Plain-text file linked from `https://magic.wizards.com/en/rules` (the file name changes with every rules update, so the link is scraped from that page). | One record per numbered rule and subrule (`702.19`, `702.19a`, ...), with its `Example:` lines. The table of contents, the glossary and the credits are skipped. |
+| Comprehensive Rules | Plain-text file linked from `https://magic.wizards.com/en/rules` (the file name changes with every rules update, so the link is scraped from that page). | One record per numbered rule and subrule (`702.19`, `702.19a`, ...), with its `Example:` lines. Only chapters 1 to 7 are kept: chapter 8 (multiplayer) and chapter 9 (casual variants such as Commander) never apply in Modern, which is played one against one. The table of contents, the glossary and the credits are skipped too. |
 
 Scryfall asks for an identifiable `User-Agent`; it is built from `BANHAMMER_CONTACT`.
 
