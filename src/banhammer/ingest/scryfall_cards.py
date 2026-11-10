@@ -83,6 +83,5 @@ def card_to_document(card: dict) -> Document | None:
         "types": card_types(type_line),
         "keywords": card.get("keywords") or [],
         "modern": modern,
-        "text": text,
     })
     return Document(id=oracle_id, page_content=text, metadata=metadata)

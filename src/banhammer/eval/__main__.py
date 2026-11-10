@@ -10,7 +10,7 @@ from rich.table import Table
 
 from banhammer.shared.config import ROOT, load_env
 from banhammer.eval.metrics import recall_at_k, risk_matches
-from banhammer.models import BalanceReport, CardInput, Hit
+from banhammer.models import CardInput
 from banhammer.pipeline import build_graph
 
 
@@ -30,25 +30,16 @@ def score_config(config_path: Path, gold_path: Path, k: int) -> dict:
     risks: list[bool] = []
     for row in load_gold(gold_path):
         card = CardInput.model_validate(row["card"])
-        result = graph.invoke({"card": card, "queries": [], "hits": []})
-        hits = [_as_hit(hit) for hit in result.get("hits") or []]
-        report = result["report"]
-        if not isinstance(report, BalanceReport):
-            report = BalanceReport.model_validate(report)
-        pieces = row.get("combo_pieces") or []
-        if pieces:
-            recalls.append(recall_at_k(hits, pieces, k))
-        risks.append(risk_matches(report, row["expected_risk"]))
+        result = graph.invoke({"card": card})
+        if row["combo_pieces"]:
+            recalls.append(recall_at_k(result["hits"], row["combo_pieces"], k))
+        risks.append(risk_matches(result["report"], row["expected_risk"]))
     return {
         "config": str(config_path),
         "recall": sum(recalls) / len(recalls) if recalls else None,
         "risk_accuracy": sum(risks) / len(risks) if risks else None,
         "cards": len(risks),
     }
-
-
-def _as_hit(hit: Hit | dict) -> Hit:
-    return hit if isinstance(hit, Hit) else Hit.model_validate(hit)
 
 
 def render_table(rows: list[dict]) -> None:

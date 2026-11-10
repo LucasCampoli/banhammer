@@ -2,15 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from banhammer.models import BalanceReport, CardInput, Hit, Query
 from banhammer.pipeline.state import PipelineState
 from banhammer.providers import StoreFactory, get_embeddings, get_llm
-from banhammer.shared.config import load_env, load_yaml
+from banhammer.shared.config import load_yaml
 
 _SYSTEM = """You are a Magic: The Gathering judge for the Modern format.
 You are given a card and numbered reference hits. Card hits are labeled [C1], [C2], ...
@@ -31,23 +30,11 @@ A claim with no citation is speculation. Do not invent rules or cards that are n
 
 def search(stores: StoreFactory, query: Query, k: int) -> list[Hit]:
     """Top-k similar documents in the query's namespace."""
-    store = stores.get(query.namespace)
-    kwargs = {"filter": query.filter} if query.filter else {}
-    pairs = store.similarity_search_with_score(query.text, k=k, **kwargs)
-    hits = []
-    for doc, score in pairs:
-        metadata = dict(doc.metadata or {})
-        metadata.setdefault("text", doc.page_content)
-        hit_id = doc.id or metadata.get("oracle_id") or metadata.get("rule") or ""
-        hits.append(Hit(
-            id=str(hit_id),
-            namespace=query.namespace,
-            text=doc.page_content,
-            metadata=metadata,
-            score=float(score),
-            source="dense",
-        ))
-    return hits
+    pairs = stores.get(query.namespace).similarity_search_with_score(query.text, k=k)
+    return [
+        Hit(id=doc.id, namespace=query.namespace, text=doc.page_content, metadata=doc.metadata, score=score)
+        for doc, score in pairs
+    ]
 
 
 def exclude_self(card: CardInput, hits: list[Hit]) -> list[Hit]:
@@ -106,15 +93,14 @@ def remap_citations(citations: list[str], labels: dict[str, str]) -> list[str]:
     return remapped
 
 
-def judge(llm: Any, card: CardInput, hits: list[Hit]) -> BalanceReport:
+def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit]) -> BalanceReport:
     """Ask the LLM for a BalanceReport. Bracket labels become hit ids."""
     labels, numbered = number_hits(hits)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
-    result = llm.with_structured_output(BalanceReport).invoke([
+    report = llm.with_structured_output(BalanceReport).invoke([
         SystemMessage(content=_SYSTEM),
         HumanMessage(content=prompt),
     ])
-    report = result if isinstance(result, BalanceReport) else BalanceReport.model_validate(result)
     data = report.model_dump()
     for issue in data["wording_issues"]:
         issue["rule_ids"] = remap_citations(issue["rule_ids"], labels)
@@ -126,14 +112,12 @@ def judge(llm: Any, card: CardInput, hits: list[Hit]) -> BalanceReport:
     return BalanceReport.model_validate(data)
 
 
-def build_graph(config: dict | Path | str):
-    load_env()
-    cfg = config if isinstance(config, dict) else load_yaml(config)
+def build_graph(config_path: Path):
+    cfg = load_yaml(config_path)
     embeddings = get_embeddings(cfg["embeddings"])
-    model = cfg["embeddings"].get("model") or "text-embedding-3-small"
-    stores = StoreFactory(cfg["vector_store"], embeddings, model=model, index_cfg=cfg.get("index"))
+    stores = StoreFactory(embeddings, model=cfg["embeddings"]["model"])
     llm = get_llm(cfg["llm"])
-    k = int(cfg.get("k", 10))
+    k = cfg["k"]
 
     def build_queries(state: PipelineState) -> dict:
         text = state["card"].as_text()
@@ -144,15 +128,15 @@ def build_graph(config: dict | Path | str):
 
     def retrieve(state: PipelineState) -> dict:
         hits = []
-        for query in state.get("queries") or []:
+        for query in state["queries"]:
             hits.extend(search(stores, query, k))
         return {"hits": hits}
 
     def drop_self(state: PipelineState) -> dict:
-        return {"hits": exclude_self(state["card"], state.get("hits") or [])}
+        return {"hits": exclude_self(state["card"], state["hits"])}
 
     def generate(state: PipelineState) -> dict:
-        return {"report": judge(llm, state["card"], state.get("hits") or [])}
+        return {"report": judge(llm, state["card"], state["hits"])}
 
     graph = StateGraph(PipelineState)
     graph.add_node("build_queries", build_queries)

@@ -33,8 +33,8 @@ Banned cards stay in the catalog on purpose: they are the clearest examples of w
 
 ## Configuration and secrets
 
-- `configs/pipeline.yaml` sets the chat model, the embedding model, Pinecone, and how many hits to keep (`k`).
-- `configs/ingest.yaml` sets the data sources and the index settings.
+- `configs/pipeline.yaml` sets the chat model, the embedding model, and how many hits to keep per namespace (`k`).
+- `configs/ingest.yaml` sets the data sources, the embedding model and the Pinecone index settings.
 - The embedding model in both files has to be the same one.
 - Secrets live in `.env` (never committed):
 
@@ -50,8 +50,8 @@ Banned cards stay in the catalog on purpose: they are the clearest examples of w
 Pydantic models in `banhammer/models.py`:
 
 - **`CardInput`**: the card to evaluate. A subset of the Scryfall card object: `name`, `mana_cost`, `type_line`, `oracle_text`, `power`, `toughness`, `loyalty`, `card_faces`. `cmc`, `colors` and `keywords` are derived when missing.
-- **`Query`**: a text to search, the namespace it targets (`cards` or `rules`), and an optional metadata filter.
-- **`Hit`**: a retrieved document: id, namespace, text, metadata, score and `source`.
+- **`Query`**: a text to search and the namespace it targets (`cards` or `rules`).
+- **`Hit`**: a retrieved document: id, namespace, text, metadata and similarity score.
 - **`BalanceReport`**: wording issues, combos, a power assessment, and a `risk` of `ok`, `watch` or `likely_ban` with a confidence. A wording issue with no rule ids, or a combo with no card ids, is marked as speculation.
 
 The LangGraph state holds `card`, `queries`, `hits` and `report`.
@@ -66,8 +66,8 @@ Chat and embeddings both go through OpenAI (`gpt-4o-mini` and `text-embedding-3-
 
 Each source has `download()` and `normalize()`. Raw files go to `data/raw/` and normalized records to `data/processed/<namespace>.jsonl`. A source is skipped when its file is already there.
 
-- **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types`, `keywords`, `modern` (`legal` or `banned`) and the text.
-- **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title`, `section` and the text. Rules are split on the rule number at the start of each line; chapter headings (`2. Parts of a Card`) are skipped.
+- **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types`, `keywords` and `modern` (`legal` or `banned`).
+- **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title` and `section`. Rules are split on the rule number at the start of each line; chapter headings (`2. Parts of a Card`) are skipped.
 
 Cards and rules are short, so each record is one document. Nothing is chunked further.
 
@@ -87,7 +87,7 @@ The record id is the `oracle_id` for cards and the rule number for rules, so re-
 `banhammer.pipeline.graph.build_graph` reads `configs/pipeline.yaml` and compiles this graph:
 
 1. **`build_queries`**. One query per namespace, both using the whole card text.
-2. **`retrieve`**. Similarity search in Pinecone, top `k` per query (10 by default). A metadata filter on the query is passed through to Pinecone.
+2. **`retrieve`**. Similarity search in Pinecone, top `k` per query (10 by default).
 3. **`exclude_self`**. Drops hits whose name is the evaluated card, or one of its faces.
 4. **`generate`**. Numbers the hits `[C1]`, `[R1]`, …, marks banned cards, and asks the LLM for a `BalanceReport`. The labels in the answer are replaced with the real hit ids; a label that matches no hit is dropped, so a claim that only cites invented labels ends up marked as speculation.
 

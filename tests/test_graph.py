@@ -8,7 +8,6 @@ def card_hit(hit_id: str, name: str, modern: str) -> Hit:
         namespace="cards",
         text=f"{name} | Creature | {{1}}{{G}} | ...",
         metadata={"name": name, "modern": modern},
-        source="dense",
     )
 
 

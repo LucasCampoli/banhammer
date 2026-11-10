@@ -1,12 +1,8 @@
 # Whole card text, dense retrieval, drop the card itself, then the LLM report.
 # The embedding model must match configs/ingest.yaml.
 llm:
-  provider: openai
   model: gpt-4o-mini
   temperature: 0
 embeddings:
-  provider: openai
   model: text-embedding-3-small
-vector_store:
-  provider: pinecone
 k: 10

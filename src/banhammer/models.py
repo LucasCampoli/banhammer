@@ -135,7 +135,6 @@ class CardInput(BaseModel):
 class Query(BaseModel):
     text: str
     namespace: Literal["cards", "rules"]
-    filter: dict[str, Any] | None = None
 
 
 class Hit(BaseModel):
@@ -144,7 +143,6 @@ class Hit(BaseModel):
     text: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     score: float | None = None
-    source: str
 
 
 class WordingIssue(BaseModel):

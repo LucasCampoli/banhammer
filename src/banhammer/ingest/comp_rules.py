@@ -79,7 +79,6 @@ def rules_to_documents(text: str) -> list[Document]:
                 "parent": parent,
                 "title": titles.get(parent, ""),
                 "section": section,
-                "text": page,
             }),
         ))
         current = None
