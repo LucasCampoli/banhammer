@@ -14,6 +14,7 @@ from .mana import ManaReading, Symbol, cost_templates, load_templates, recognize
 from .normalize import normalize
 from .preprocess import preprocess
 from .tesseract import ReadResult, Tesseract, Word
+from .type_line import TypeVocabulary, correct_type_line
 from .text_symbols import bare_templates, find_text_symbols, join_words, replace_with_placeholders, restore_symbols
 from .zones import DEFAULT_ZONES, crop_zones, draw_zone_overlay, load_zones
 
@@ -128,6 +129,8 @@ class OCRPipeline:
         self.templates = load_templates(tdir if tdir.is_absolute() else ROOT / tdir)
         self.cost_templates = cost_templates(self.templates)
         self.glyph_templates = bare_templates(self.templates)
+        vocabulary = Path(self.cfg.get("type_vocabulary", "data/type_vocabulary.json"))
+        self.type_vocabulary = TypeVocabulary.load(vocabulary if vocabulary.is_absolute() else ROOT / vocabulary)
 
     def zones(self, frame: str | None = None) -> dict[str, ZoneBox]:
         if frame not in self._zones:
@@ -167,7 +170,8 @@ class OCRPipeline:
                                      NAME_LEADING_CHARS, NAME_TRAILING_CHARS)
         type_scale = type_pre.shape[1] / crops["type_line"].shape[1]
         set_symbol_x0 = (zones["set_symbol"].x0 - zones["type_line"].x0) * width
-        type_text = strip_edge_chars(line_text(type_line, type_scale, type_pre.shape[0], set_symbol_x0))
+        type_text = correct_type_line(strip_edge_chars(line_text(type_line, type_scale, type_pre.shape[0],
+                                                                 set_symbol_x0)), self.type_vocabulary)
         rules.lines = restore_symbols(rules.lines, symbols, rules_pre.shape[1] / rules_crop.shape[1])
         box_lines = text_box_lines(rules, self.cfg.get("min_line_confidence", 0.5))
         rules_lines, flavor_lines = split_text_box(box_lines, rules_pre)
