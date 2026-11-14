@@ -1,4 +1,4 @@
-"""Download mana symbols from Scryfall and save them as PNG templates."""
+"""Download the symbols printed in mana costs and rules text from Scryfall as PNG templates."""
 from __future__ import annotations
 
 import argparse
@@ -14,8 +14,8 @@ HEADERS = {
     "User-Agent": f"Banhammer/0.1 (university project; {os.environ.get('BANHAMMER_CONTACT', 'contact-not-set')})",
     "Accept": "application/json;q=0.9,*/*;q=0.8",
 }
-# symbols that can show up in a mana cost (no tap, energy, etc.)
-COST = re.compile(r"^\{(?:[WUBRGCSXYZ]|\d{1,2}|[WUBRG]/[WUBRG](?:/P)?|2/[WUBRG]|[WUBRGC]/P)\}$")
+# mana symbols, plus tap, untap, energy and generic Phyrexian mana, which only appear in rules text
+SYMBOL = re.compile(r"^\{(?:[WUBRGCSXYZTQEP]|\d{1,2}|[WUBRG]/[WUBRG](?:/P)?|2/[WUBRG]|[WUBRGC]/P)\}$")
 
 
 def filename(symbol: str) -> str:
@@ -32,7 +32,7 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     symbols = requests.get("https://api.scryfall.com/symbology", headers=HEADERS, timeout=30).json()["data"]
     for s in symbols:
-        if not COST.match(s["symbol"]):
+        if not SYMBOL.match(s["symbol"]):
             continue
         time.sleep(0.1)
         svg = requests.get(s["svg_uri"], headers=HEADERS, timeout=30).content
