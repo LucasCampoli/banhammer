@@ -37,7 +37,6 @@ def _run(image: Path) -> dict:
 def score(card: dict, ocr: dict) -> dict:
     name = card["name"]
     rules_ref = normalize_rules(card.get("oracle_text"), name)
-    rules_flavor_ref = normalize_rules(f"{card.get('oracle_text') or ''} {card.get('flavor_text') or ''}", name)
     rules_pred = normalize_rules(ocr["rules_text"], name)
     type_ref, type_pred = normalize_type_line(card["type_line"]), normalize_type_line(ocr["type_line"])
     name_pred = flatten(ocr["name"])
@@ -60,7 +59,9 @@ def score(card: dict, ocr: dict) -> dict:
         "rules_pred": rules_pred,
         "rules_ref": rules_ref,
         "rules_cer": cer(rules_pred, rules_ref),
-        "rules_flavor_cer": cer(rules_pred, rules_flavor_ref),
+        "flavor_pred": flatten(ocr["flavor_text"]),
+        "flavor_ref": flatten(card.get("flavor_text")),
+        "flavor_cer": cer(flatten(ocr["flavor_text"]), flatten(card.get("flavor_text"))),
     }
 
 
@@ -77,7 +78,7 @@ def summary_row(label: str, rows: list[dict]) -> list[str]:
         percent([r["type_exact"] for r in rows]),
         f"{percent(pt)} ({len(pt)})",
         f"{mean(r['rules_cer'] for r in rows):.3f}",
-        f"{mean(r['rules_flavor_cer'] for r in rows):.3f}",
+        f"{mean(r['flavor_cer'] for r in rows):.3f}",
     ]
 
 
@@ -127,7 +128,7 @@ def main() -> None:
         writer.writerows(rows)
 
     table = Table(title=f"OCR benchmark ({len(rows)} cards, config {args.config.name})")
-    for column in ("group", "n", "name %", "mana %", "type %", "P/T % (n)", "rules CER", "rules+flavor CER"):
+    for column in ("group", "n", "name %", "mana %", "type %", "P/T % (n)", "rules CER", "flavor CER"):
         table.add_column(column, justify="left" if column == "group" else "right", no_wrap=True)
     for label, group in groups(rows, cards):
         if group:

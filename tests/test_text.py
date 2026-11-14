@@ -18,7 +18,7 @@ def test_strip_edge_chars_keeps_inner_and_allowed_punctuation():
 
 
 def test_line_text_drops_set_symbol_and_detached_marks():
-    words = [Word("|", 0.9, 0, 6), Word("Double", 0.96, 40, 100), Word("Cleave", 0.9, 160, 100),
-             Word("oe", 0.0, 420, 20), Word("S", 0.8, 600, 20)]
-    result = ReadResult("", None, words)
+    words = [Word("|", 0.9, 0, 0, 6, 40), Word("Double", 0.96, 40, 0, 100, 40),
+             Word("Cleave", 0.9, 160, 0, 100, 40), Word("oe", 0.0, 420, 0, 20, 40), Word("S", 0.8, 600, 0, 20, 40)]
+    result = ReadResult("", None, [words])
     assert line_text(result, scale=2.0, max_gap=30, right_limit=290) == "Double Cleave"

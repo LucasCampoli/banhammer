@@ -9,6 +9,7 @@ import numpy as np
 import yaml
 
 from banhammer.models import OCRCard
+from .flavor import ITALIC_SLANT, is_measurable, line_styles, slant, split_flavor
 from .mana import ManaReading, load_templates, recognize_mana_cost
 from .normalize import normalize
 from .preprocess import preprocess
@@ -69,6 +70,36 @@ def line_text(result: ReadResult, scale: float, max_gap: float, right_limit: flo
     return clean_text(" ".join(w.text for w in best))
 
 
+def text_box_lines(result: ReadResult, min_line_confidence: float) -> list[list[Word]]:
+    """Lines of the text box without the frame: box border bars and unreadable edge lines.
+
+    Lines at the top or bottom whose mean confidence is below `min_line_confidence`
+    are Tesseract reading the frame or the bottom bar, never rules text.
+    """
+    lines = [[w for w in line if w.text.strip("|")] for line in result.lines]
+    lines = [line for line in lines if line]
+
+    def confident(line: list[Word]) -> bool:
+        return sum(w.confidence or 0.0 for w in line) / len(line) >= min_line_confidence
+
+    while lines and not confident(lines[0]):
+        lines.pop(0)
+    while lines and not confident(lines[-1]):
+        lines.pop()
+    return lines
+
+
+def split_text_box(lines: list[list[Word]], image: np.ndarray) -> tuple[list[str], list[str]]:
+    """Split the text box lines into rules and flavor lines by the slant of their words."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    words = [[w.text for w in line] for line in lines]
+    italic = [[slant(gray[w.top:w.top + w.height, w.left:w.left + w.width]) > ITALIC_SLANT
+               if is_measurable(w.text) else None for w in line] for line in lines]
+    start = split_flavor(line_styles(words, italic))
+    texts = [clean_text(" ".join(line)) for line in words]
+    return texts[:start], texts[start:]
+
+
 def resolve_tessdata_dir(tessdata_dir: str, lang: str) -> Path:
     path = Path(tessdata_dir)
     path = path if path.is_absolute() else ROOT / path
@@ -108,23 +139,36 @@ class OCRPipeline:
 
         mana = recognize_mana_cost(crops["mana_cost"], self.templates,
                                    self.cfg.get("mana", {}).get("min_score", 0.7))
-        width = img.shape[1]
-        name, name_scale = self._read("name", self._name_crop(crops["name"], mana, width), debug)
-        type_line, type_scale = self._read("type_line", crops["type_line"], debug)
-        rules, _ = self._read("rules_text", crops["rules_text"], debug)
+        height, width = img.shape[:2]
+        name_crop = self._name_crop(crops["name"], mana, width)
+        name, name_pre = self._read("name", name_crop, debug)
+        type_line, type_pre = self._read("type_line", crops["type_line"], debug)
         pt, _ = self._read("power_toughness", crops["power_toughness"], debug)
-
-        name_gap = crops["name"].shape[0] * name_scale  # one line height
-        name_text = strip_edge_chars(line_text(name, name_scale, name_gap), NAME_LEADING_CHARS, NAME_TRAILING_CHARS)
-        set_symbol_x0 = (self.zones["set_symbol"].x0 - self.zones["type_line"].x0) * width
-        type_gap = crops["type_line"].shape[0] * type_scale
-        type_text = strip_edge_chars(line_text(type_line, type_scale, type_gap, set_symbol_x0))
         power, toughness = split_pt(clean_text(pt.text))
+        rules_crop = crops["rules_text"] if power is None else self._mask_pt_box(crops["rules_text"], width, height)
+        rules, rules_pre = self._read("rules_text", rules_crop, debug)
+
+        name_scale = name_pre.shape[1] / name_crop.shape[1]
+        name_text = strip_edge_chars(line_text(name, name_scale, name_pre.shape[0]),
+                                     NAME_LEADING_CHARS, NAME_TRAILING_CHARS)
+        type_scale = type_pre.shape[1] / crops["type_line"].shape[1]
+        set_symbol_x0 = (self.zones["set_symbol"].x0 - self.zones["type_line"].x0) * width
+        type_text = strip_edge_chars(line_text(type_line, type_scale, type_pre.shape[0], set_symbol_x0))
+        box_lines = text_box_lines(rules, self.cfg.get("min_line_confidence", 0.5))
+        rules_lines, flavor_lines = split_text_box(box_lines, rules_pre)
         conf = {"name": name.confidence, "mana_cost": mana.confidence, "type_line": type_line.confidence,
                 "rules_text": rules.confidence, "power": pt.confidence, "toughness": pt.confidence}
         return OCRCard(name=name_text, mana_cost=mana.cost, type_line=type_text,
-                       rules_text=clean_text(rules.text, multiline=True), power=power, toughness=toughness,
-                       confidence=conf)
+                       rules_text="\n".join(rules_lines), flavor_text="\n".join(flavor_lines),
+                       power=power, toughness=toughness, confidence=conf)
+
+    def _mask_pt_box(self, rules_crop: np.ndarray, width: int, height: int) -> np.ndarray:
+        """Paint over the part of the P/T box inside the text box, so its frame is not read as text."""
+        rules, pt = self.zones["rules_text"], self.zones["power_toughness"]
+        x0, y0 = int((pt.x0 - rules.x0) * width), int((pt.y0 - rules.y0) * height)
+        masked = rules_crop.copy()
+        masked[max(0, y0):, max(0, x0):] = np.median(rules_crop.reshape(-1, rules_crop.shape[-1]), axis=0)
+        return masked
 
     def _name_crop(self, crop: np.ndarray, mana: ManaReading, width: int) -> np.ndarray:
         """Cut the name zone where the mana cost starts, so symbols are not read as letters."""
@@ -133,17 +177,16 @@ class OCRPipeline:
         offset = (self.zones["mana_cost"].x0 - self.zones["name"].x0) * width
         return crop[:, :max(1, int(offset + mana.left) - NAME_MANA_GAP)]
 
-    def _read(self, zone: str, crop: np.ndarray, debug: Path | None) -> tuple[ReadResult, float]:
-        """Preprocess and read a crop; also return how many read-image pixels one crop pixel became."""
+    def _read(self, zone: str, crop: np.ndarray, debug: Path | None) -> tuple[ReadResult, np.ndarray]:
+        """Preprocess and read a crop; also return the preprocessed image that was read."""
         if zone == "power_toughness":  # drop the box border, pad so Tesseract sees margins
             h, w = crop.shape[:2]
             crop = crop[int(h * .2):int(h * .8), int(w * .2):int(w * .85)]
         pre = preprocess(crop, self.cfg.get("preprocess", {}))
-        scale = pre.shape[1] / crop.shape[1]
         if zone == "power_toughness":
             if pre.mean() < 110:  # light text on a dark box (vehicles): invert
                 pre = 255 - pre
             pre = cv2.copyMakeBorder(pre, 20, 20, 20, 20, cv2.BORDER_REPLICATE)
         if debug:
             cv2.imwrite(str(debug / f"{zone}.png"), pre)
-        return self.reader.read(pre, zone), scale
+        return self.reader.read(pre, zone), pre
