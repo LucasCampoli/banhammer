@@ -17,8 +17,9 @@ class ReadResult:
 
 class Tesseract:
     def __init__(self, lang: str = "eng", psm: dict[str, int] | None = None,
-                 whitelist: dict[str, str] | None = None):
+                 whitelist: dict[str, str] | None = None, tessdata_dir: str | None = None):
         self.lang = lang
+        self.tessdata_dir = tessdata_dir
         self.psm = psm or {}
         self.whitelist = whitelist or {}
         if os.environ.get("TESSERACT_CMD"):
@@ -26,6 +27,8 @@ class Tesseract:
 
     def read(self, image: np.ndarray, zone: str) -> ReadResult:
         config = f"--psm {self.psm.get(zone, 6)}"
+        if self.tessdata_dir:
+            config += f' --tessdata-dir "{self.tessdata_dir}"'
         if zone in self.whitelist:
             config += f" -c tessedit_char_whitelist={self.whitelist[zone]}"
         data = pytesseract.image_to_data(image, lang=self.lang, config=config, output_type=Output.DICT)
