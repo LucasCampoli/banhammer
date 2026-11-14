@@ -57,15 +57,20 @@ class ScryfallCards:
         return docs
 
 
+def is_ingested(card: dict) -> bool:
+    """Whether a bulk card belongs to the indexed population (Modern legal or banned)."""
+    return (
+        card.get("layout") not in DROPPED_LAYOUTS
+        and (card.get("legalities") or {}).get("modern") in {"legal", "banned"}
+        and bool(card.get("oracle_id"))
+    )
+
+
 def card_to_document(card: dict) -> Document | None:
-    if card.get("layout") in DROPPED_LAYOUTS:
+    if not is_ingested(card):
         return None
-    modern = (card.get("legalities") or {}).get("modern")
-    if modern not in {"legal", "banned"}:
-        return None
-    oracle_id = card.get("oracle_id")
-    if not oracle_id:
-        return None
+    oracle_id = card["oracle_id"]
+    modern = card["legalities"]["modern"]
     faces = card.get("card_faces") or None
     name = card.get("name") or ""
     type_line = card.get("type_line") or ""
