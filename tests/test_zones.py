@@ -2,7 +2,7 @@ import numpy as np
 
 from banhammer.ocr.zones import COLORS, crop_zones, draw_zone_overlay, load_zones
 
-EXPECTED = {"name", "mana_cost", "type_line", "rules_text", "power_toughness"}
+EXPECTED = {"name", "mana_cost", "type_line", "set_symbol", "rules_text", "power_toughness"}
 
 
 def test_zone_config_loads():

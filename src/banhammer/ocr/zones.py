@@ -12,7 +12,7 @@ from banhammer.models import ZoneBox
 DEFAULT_ZONES = Path(__file__).resolve().parents[3] / "configs" / "zones.yaml"
 COLORS = {  # BGR
     "name": (0, 0, 255), "mana_cost": (0, 165, 255), "type_line": (0, 200, 0),
-    "rules_text": (255, 0, 0), "power_toughness": (255, 0, 255),
+    "rules_text": (255, 0, 0), "power_toughness": (255, 0, 255), "set_symbol": (0, 255, 255),
 }
 
 
