@@ -35,6 +35,14 @@ def clean_text(text: str, multiline: bool = False) -> str:
     return re.sub(r"^[^\w*]+|[\s|>»<«'`\-]+$", "", text)
 
 
+def resolve_tessdata_dir(tessdata_dir: str, lang: str) -> Path:
+    path = Path(tessdata_dir)
+    path = path if path.is_absolute() else ROOT / path
+    if not (path / f"{lang}.traineddata").exists():
+        raise FileNotFoundError(f"{path / f'{lang}.traineddata'} not found; run scripts/download_tessdata.py")
+    return path
+
+
 def split_pt(text: str) -> tuple[str | None, str | None]:
     m = re.match(r"^\s*([0-9*+-]+)\s*/\s*([0-9*+-]+)\s*$", text)
     return (m.group(1), m.group(2)) if m else (None, None)
@@ -44,7 +52,11 @@ class OCRPipeline:
     def __init__(self, config: dict | None = None, zones_path: Path | str = DEFAULT_ZONES):
         self.cfg = config or load_config()
         self.zones = load_zones(zones_path)
-        self.reader = Tesseract(**self.cfg.get("tesseract", {}))
+        reader_cfg = dict(self.cfg.get("tesseract", {}))
+        if reader_cfg.get("tessdata_dir"):
+            reader_cfg["tessdata_dir"] = str(resolve_tessdata_dir(reader_cfg["tessdata_dir"],
+                                                                  reader_cfg.get("lang", "eng")))
+        self.reader = Tesseract(**reader_cfg)
         tdir = Path(self.cfg.get("mana", {}).get("templates_dir", "data/mana_templates"))
         self.templates = load_templates(tdir if tdir.is_absolute() else ROOT / tdir)
 

@@ -6,6 +6,7 @@ preprocess:
   threshold: none            # none | otsu | adaptive
 tesseract:
   lang: eng
+  tessdata_dir: data/tessdata  # tessdata_best models (scripts/download_tessdata.py); null uses the system ones
   psm:
     name: 7
     type_line: 7

@@ -34,6 +34,7 @@ python -m banhammer.index                   # embed data/processed into Pinecone
 python -m banhammer evaluate path/to/card.json
 python -m banhammer.eval --configs configs/pipeline.yaml
 
+python scripts/download_tessdata.py         # tessdata_best model into data/tessdata/
 python scripts/download_mana_symbols.py     # symbol templates into data/mana_templates/
 python scripts/download_benchmark_images.py # OCR benchmark images into images/benchmark/
 python -m banhammer.ocr images/benchmark/<card id>.jpg --debug
