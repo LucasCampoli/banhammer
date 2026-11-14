@@ -13,8 +13,10 @@ from pytesseract import Output
 class Word:
     text: str
     confidence: float | None
-    left: int  # pixels in the image that was read
+    left: int  # box in pixels of the image that was read
+    top: int
     width: int
+    height: int
 
     @property
     def center(self) -> float:
@@ -25,7 +27,11 @@ class Word:
 class ReadResult:
     text: str
     confidence: float | None = None
-    words: list[Word] = field(default_factory=list)
+    lines: list[list[Word]] = field(default_factory=list)
+
+    @property
+    def words(self) -> list[Word]:
+        return [word for line in self.lines for word in line]
 
 
 class Tesseract:
@@ -45,15 +51,14 @@ class Tesseract:
         if zone in self.whitelist:
             config += f" -c tessedit_char_whitelist={self.whitelist[zone]}"
         data = pytesseract.image_to_data(image, lang=self.lang, config=config, output_type=Output.DICT)
-        lines: dict[tuple, list[str]] = {}
-        words: list[Word] = []
+        lines: dict[tuple, list[Word]] = {}
         for i, text in enumerate(data["text"]):
             if not text.strip():
                 continue
             key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
-            lines.setdefault(key, []).append(text)
             conf = float(data["conf"][i])
-            words.append(Word(text, conf / 100.0 if conf >= 0 else None, data["left"][i], data["width"][i]))
-        confs = [w.confidence for w in words if w.confidence is not None]
-        text = "\n".join(" ".join(line) for line in lines.values())
-        return ReadResult(text, sum(confs) / len(confs) if confs else None, words)
+            lines.setdefault(key, []).append(Word(text, conf / 100.0 if conf >= 0 else None, data["left"][i],
+                                                  data["top"][i], data["width"][i], data["height"][i]))
+        confs = [w.confidence for line in lines.values() for w in line if w.confidence is not None]
+        text = "\n".join(" ".join(w.text for w in line) for line in lines.values())
+        return ReadResult(text, sum(confs) / len(confs) if confs else None, list(lines.values()))
