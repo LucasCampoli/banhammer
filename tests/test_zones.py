@@ -16,3 +16,10 @@ def test_crop_and_overlay_shapes():
     crops = crop_zones(img, zones)
     assert all(c.size > 0 for c in crops.values())
     assert draw_zone_overlay(img, zones).shape == img.shape
+
+
+def test_frame_overrides_replace_only_their_boxes():
+    base, old = load_zones(), load_zones(frame="2003")
+    assert old["power_toughness"] != base["power_toughness"]
+    assert old["name"] == base["name"]
+    assert load_zones(frame="2015") == base

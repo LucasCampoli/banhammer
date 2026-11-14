@@ -30,8 +30,9 @@ def _init_worker(config_path: Path) -> None:
     _pipeline = OCRPipeline(load_config(config_path))
 
 
-def _run(image: Path) -> dict:
-    return _pipeline.run(image).model_dump()
+def _run(job: tuple[Path, str]) -> dict:
+    image, frame = job
+    return _pipeline.run(image, frame=frame).model_dump()
 
 
 def score(card: dict, ocr: dict) -> dict:
@@ -113,7 +114,7 @@ def main() -> None:
 
     os.environ["OMP_THREAD_LIMIT"] = "1"  # one Tesseract thread per worker process
     with ProcessPoolExecutor(args.workers, initializer=_init_worker, initargs=(args.config,)) as pool:
-        results = list(pool.map(_run, images))
+        results = list(pool.map(_run, [(image, cards[e["id"]]["frame"]) for image, e in zip(images, entries)]))
 
     rows = []
     for entry, ocr in zip(entries, results):

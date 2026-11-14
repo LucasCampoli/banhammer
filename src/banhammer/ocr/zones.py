@@ -16,9 +16,11 @@ COLORS = {  # BGR
 }
 
 
-def load_zones(path: Path | str = DEFAULT_ZONES) -> dict[str, ZoneBox]:
+def load_zones(path: Path | str = DEFAULT_ZONES, frame: str | None = None) -> dict[str, ZoneBox]:
+    """Zones of the base (2015) frame, with the overrides of the given Scryfall `frame` applied."""
     data = yaml.safe_load(Path(path).read_text())
-    return {k: ZoneBox(x0=v[0], y0=v[1], x1=v[2], y1=v[3]) for k, v in data["zones"].items()}
+    boxes = {**data["zones"], **(data.get("frames", {}).get(frame) or {})}
+    return {k: ZoneBox(x0=v[0], y0=v[1], x1=v[2], y1=v[3]) for k, v in boxes.items()}
 
 
 def crop_zones(img: np.ndarray, zones: dict[str, ZoneBox]) -> dict[str, np.ndarray]:

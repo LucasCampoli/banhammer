@@ -1,4 +1,5 @@
 # Zone boxes as fractions of the normalized 672x936 card: [x0, y0, x1, y1]
+# `zones` fits the 2015 frame; `frames` overrides boxes for other Scryfall `frame` values.
 # Calibrate with: python -m banhammer.ocr card.jpg --debug  (see overlay.png)
 frame: [672, 936]
 # name and mana_cost share the title bar: the name is cut where the mana cost starts.
@@ -10,3 +11,8 @@ zones:
   set_symbol:     [0.860, 0.565, 0.940, 0.612]
   rules_text:     [0.075, 0.625, 0.925, 0.925]
   power_toughness: [0.765, 0.885, 0.945, 0.945]
+frames:
+  "2003":                    # lower P/T box, type bar a little higher
+    type_line:      [0.085, 0.556, 0.940, 0.612]
+    set_symbol:     [0.860, 0.556, 0.940, 0.612]
+    power_toughness: [0.735, 0.890, 0.920, 0.952]

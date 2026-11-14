@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import yaml
 
-from banhammer.models import OCRCard
+from banhammer.models import OCRCard, ZoneBox
 from .flavor import ITALIC_SLANT, is_measurable, line_styles, slant, split_flavor
 from .mana import ManaReading, Symbol, cost_templates, load_templates, recognize_mana_cost
 from .normalize import normalize
@@ -117,7 +117,8 @@ def split_pt(text: str) -> tuple[str | None, str | None]:
 class OCRPipeline:
     def __init__(self, config: dict | None = None, zones_path: Path | str = DEFAULT_ZONES):
         self.cfg = config or load_config()
-        self.zones = load_zones(zones_path)
+        self.zones_path = zones_path
+        self._zones: dict[str | None, dict[str, ZoneBox]] = {}
         reader_cfg = dict(self.cfg.get("tesseract", {}))
         if reader_cfg.get("tessdata_dir"):
             reader_cfg["tessdata_dir"] = str(resolve_tessdata_dir(reader_cfg["tessdata_dir"],
@@ -128,27 +129,36 @@ class OCRPipeline:
         self.cost_templates = cost_templates(self.templates)
         self.glyph_templates = bare_templates(self.templates)
 
+    def zones(self, frame: str | None = None) -> dict[str, ZoneBox]:
+        if frame not in self._zones:
+            self._zones[frame] = load_zones(self.zones_path, frame)
+        return self._zones[frame]
+
     def run(self, image: Path | str | np.ndarray, photo: bool | None = None,
-            debug_dir: Path | str | None = None) -> OCRCard:
+            debug_dir: Path | str | None = None, frame: str | None = None) -> OCRCard:
+        """OCR a card image; `frame` is the Scryfall frame ("2015", "2003"), None for the 2015 layout."""
         photo = self.cfg.get("perspective_correct", False) if photo is None else photo
         img = normalize(image, photo=photo)
-        crops = crop_zones(img, self.zones)
+        zones = self.zones(frame)
+        crops = crop_zones(img, zones)
         debug = Path(debug_dir) if debug_dir else None
         if debug:
             debug.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(debug / "normalized.png"), img)
-            cv2.imwrite(str(debug / "overlay.png"), draw_zone_overlay(img, self.zones))
+            cv2.imwrite(str(debug / "overlay.png"), draw_zone_overlay(img, zones))
             cv2.imwrite(str(debug / "mana_cost.png"), crops["mana_cost"])
 
         mana = recognize_mana_cost(crops["mana_cost"], self.cost_templates,
                                    self.cfg.get("mana", {}).get("min_score", 0.7))
         height, width = img.shape[:2]
-        name_crop = self._name_crop(crops["name"], mana, width)
+        name_crop = self._name_crop(crops["name"], mana, width, zones)
         name, name_pre = self._read("name", name_crop, debug)
         type_line, type_pre = self._read("type_line", crops["type_line"], debug)
         pt, _ = self._read("power_toughness", crops["power_toughness"], debug)
         power, toughness = split_pt(clean_text(pt.text))
-        rules_crop = crops["rules_text"] if power is None else self._mask_pt_box(crops["rules_text"], width, height)
+        rules_crop = crops["rules_text"]
+        if power is not None:
+            rules_crop = self._mask_pt_box(rules_crop, width, height, zones)
         symbols = self._text_symbols(rules_crop)
         rules, rules_pre = self._read("rules_text", replace_with_placeholders(rules_crop, symbols), debug)
 
@@ -156,7 +166,7 @@ class OCRPipeline:
         name_text = strip_edge_chars(line_text(name, name_scale, name_pre.shape[0]),
                                      NAME_LEADING_CHARS, NAME_TRAILING_CHARS)
         type_scale = type_pre.shape[1] / crops["type_line"].shape[1]
-        set_symbol_x0 = (self.zones["set_symbol"].x0 - self.zones["type_line"].x0) * width
+        set_symbol_x0 = (zones["set_symbol"].x0 - zones["type_line"].x0) * width
         type_text = strip_edge_chars(line_text(type_line, type_scale, type_pre.shape[0], set_symbol_x0))
         rules.lines = restore_symbols(rules.lines, symbols, rules_pre.shape[1] / rules_crop.shape[1])
         box_lines = text_box_lines(rules, self.cfg.get("min_line_confidence", 0.5))
@@ -174,19 +184,21 @@ class OCRPipeline:
                                  cfg.get("min_score", 0.86), cfg.get("min_glyph_score", 0.8),
                                  cfg.get("min_disk_contrast", 15.0))
 
-    def _mask_pt_box(self, rules_crop: np.ndarray, width: int, height: int) -> np.ndarray:
+    @staticmethod
+    def _mask_pt_box(rules_crop: np.ndarray, width: int, height: int, zones: dict[str, ZoneBox]) -> np.ndarray:
         """Paint over the part of the P/T box inside the text box, so its frame is not read as text."""
-        rules, pt = self.zones["rules_text"], self.zones["power_toughness"]
+        rules, pt = zones["rules_text"], zones["power_toughness"]
         x0, y0 = int((pt.x0 - rules.x0) * width), int((pt.y0 - rules.y0) * height)
         masked = rules_crop.copy()
         masked[max(0, y0):, max(0, x0):] = np.median(rules_crop.reshape(-1, rules_crop.shape[-1]), axis=0)
         return masked
 
-    def _name_crop(self, crop: np.ndarray, mana: ManaReading, width: int) -> np.ndarray:
+    @staticmethod
+    def _name_crop(crop: np.ndarray, mana: ManaReading, width: int, zones: dict[str, ZoneBox]) -> np.ndarray:
         """Cut the name zone where the mana cost starts, so symbols are not read as letters."""
         if mana.left is None:
             return crop
-        offset = (self.zones["mana_cost"].x0 - self.zones["name"].x0) * width
+        offset = (zones["mana_cost"].x0 - zones["name"].x0) * width
         return crop[:, :max(1, int(offset + mana.left) - NAME_MANA_GAP)]
 
     def _read(self, zone: str, crop: np.ndarray, debug: Path | None) -> tuple[ReadResult, np.ndarray]:

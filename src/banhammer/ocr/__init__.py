@@ -6,9 +6,10 @@ from pathlib import Path
 from banhammer.models import OCRCard
 
 
-def run_ocr(image: Path | str, photo: bool | None = None, debug_dir: Path | str | None = None) -> OCRCard:
+def run_ocr(image: Path | str, photo: bool | None = None, debug_dir: Path | str | None = None,
+            frame: str | None = None) -> OCRCard:
     from .pipeline import OCRPipeline
-    return OCRPipeline().run(image, photo=photo, debug_dir=debug_dir)
+    return OCRPipeline().run(image, photo=photo, debug_dir=debug_dir, frame=frame)
 
 
 __all__ = ["run_ocr"]
