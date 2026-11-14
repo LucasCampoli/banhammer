@@ -34,9 +34,9 @@ python -m banhammer.index                   # embed data/processed into Pinecone
 python -m banhammer evaluate path/to/card.json
 python -m banhammer.eval --configs configs/pipeline.yaml
 
-python scripts/download_samples.py          # ~30 cards into images/samples/
 python scripts/download_mana_symbols.py     # symbol templates into data/mana_templates/
-python -m banhammer.ocr images/samples/<card>.jpg --debug
+python scripts/download_benchmark_images.py # OCR benchmark images into images/benchmark/
+python -m banhammer.ocr images/benchmark/<card id>.jpg --debug
 python scripts/evaluate_ocr.py              # table + outputs/ocr_eval.csv
 pytest
 ```
@@ -44,6 +44,8 @@ pytest
 `evaluate` reads a Scryfall-shaped card JSON and writes `outputs/reports/<card name>.json` and `.md`. `ingest` skips a source whose raw or processed file is already present; pass `--force` to refresh it. The embedding model in `configs/ingest.yaml` and `configs/pipeline.yaml` has to be the same one.
 
 `--debug` saves the zone overlay and the preprocessed crops to `outputs/debug/<card>/`. Use `--photo` for real photos (perspective correction).
+
+The OCR only transcribes single-faced cards with the 2003 or 2015 frame that are not planeswalkers (`banhammer/ocr/scope.py`, about 94% of the indexed cards); the rest keep their Scryfall text. The benchmark in `data/eval/ocr_benchmark.jsonl` lists 150 cards drawn uniformly from that population plus a few per risky feature (2003 frame, legendary, white border, low-resolution scan, ...). `scripts/build_ocr_benchmark.py` made it; do not rebuild it unless you want results that cannot be compared with older runs. The benchmark and evaluation scripts read the Scryfall bulk from `data/raw/oracle-cards.jsonl.gz` (pass `--bulk` for another file). Rules text is compared with Oracle text after removing the most common templating changes, so the error still includes some errata.
 
 Zone coordinates are in `configs/zones.yaml` (fractions of the 672x936 card) and the OCR settings in `configs/ocr.yaml`.
 
