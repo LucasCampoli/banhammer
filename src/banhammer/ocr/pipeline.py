@@ -10,10 +10,11 @@ import yaml
 
 from banhammer.models import OCRCard
 from .flavor import ITALIC_SLANT, is_measurable, line_styles, slant, split_flavor
-from .mana import ManaReading, load_templates, recognize_mana_cost
+from .mana import ManaReading, Symbol, cost_templates, load_templates, recognize_mana_cost
 from .normalize import normalize
 from .preprocess import preprocess
 from .tesseract import ReadResult, Tesseract, Word
+from .text_symbols import bare_templates, find_text_symbols, join_words, replace_with_placeholders, restore_symbols
 from .zones import DEFAULT_ZONES, crop_zones, draw_zone_overlay, load_zones
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -96,7 +97,7 @@ def split_text_box(lines: list[list[Word]], image: np.ndarray) -> tuple[list[str
     italic = [[slant(gray[w.top:w.top + w.height, w.left:w.left + w.width]) > ITALIC_SLANT
                if is_measurable(w.text) else None for w in line] for line in lines]
     start = split_flavor(line_styles(words, italic))
-    texts = [clean_text(" ".join(line)) for line in words]
+    texts = [clean_text(join_words(line)) for line in words]
     return texts[:start], texts[start:]
 
 
@@ -124,6 +125,8 @@ class OCRPipeline:
         self.reader = Tesseract(**reader_cfg)
         tdir = Path(self.cfg.get("mana", {}).get("templates_dir", "data/mana_templates"))
         self.templates = load_templates(tdir if tdir.is_absolute() else ROOT / tdir)
+        self.cost_templates = cost_templates(self.templates)
+        self.glyph_templates = bare_templates(self.templates)
 
     def run(self, image: Path | str | np.ndarray, photo: bool | None = None,
             debug_dir: Path | str | None = None) -> OCRCard:
@@ -137,7 +140,7 @@ class OCRPipeline:
             cv2.imwrite(str(debug / "overlay.png"), draw_zone_overlay(img, self.zones))
             cv2.imwrite(str(debug / "mana_cost.png"), crops["mana_cost"])
 
-        mana = recognize_mana_cost(crops["mana_cost"], self.templates,
+        mana = recognize_mana_cost(crops["mana_cost"], self.cost_templates,
                                    self.cfg.get("mana", {}).get("min_score", 0.7))
         height, width = img.shape[:2]
         name_crop = self._name_crop(crops["name"], mana, width)
@@ -146,7 +149,8 @@ class OCRPipeline:
         pt, _ = self._read("power_toughness", crops["power_toughness"], debug)
         power, toughness = split_pt(clean_text(pt.text))
         rules_crop = crops["rules_text"] if power is None else self._mask_pt_box(crops["rules_text"], width, height)
-        rules, rules_pre = self._read("rules_text", rules_crop, debug)
+        symbols = self._text_symbols(rules_crop)
+        rules, rules_pre = self._read("rules_text", replace_with_placeholders(rules_crop, symbols), debug)
 
         name_scale = name_pre.shape[1] / name_crop.shape[1]
         name_text = strip_edge_chars(line_text(name, name_scale, name_pre.shape[0]),
@@ -154,6 +158,7 @@ class OCRPipeline:
         type_scale = type_pre.shape[1] / crops["type_line"].shape[1]
         set_symbol_x0 = (self.zones["set_symbol"].x0 - self.zones["type_line"].x0) * width
         type_text = strip_edge_chars(line_text(type_line, type_scale, type_pre.shape[0], set_symbol_x0))
+        rules.lines = restore_symbols(rules.lines, symbols, rules_pre.shape[1] / rules_crop.shape[1])
         box_lines = text_box_lines(rules, self.cfg.get("min_line_confidence", 0.5))
         rules_lines, flavor_lines = split_text_box(box_lines, rules_pre)
         conf = {"name": name.confidence, "mana_cost": mana.confidence, "type_line": type_line.confidence,
@@ -161,6 +166,13 @@ class OCRPipeline:
         return OCRCard(name=name_text, mana_cost=mana.cost, type_line=type_text,
                        rules_text="\n".join(rules_lines), flavor_text="\n".join(flavor_lines),
                        power=power, toughness=toughness, confidence=conf)
+
+    def _text_symbols(self, rules_crop: np.ndarray) -> list[Symbol]:
+        cfg = self.cfg.get("text_symbols", {})
+        smallest, largest = cfg.get("diameters", [20, 27])
+        return find_text_symbols(rules_crop, self.templates, self.glyph_templates, list(range(smallest, largest + 1)),
+                                 cfg.get("min_score", 0.86), cfg.get("min_glyph_score", 0.8),
+                                 cfg.get("min_disk_contrast", 15.0))
 
     def _mask_pt_box(self, rules_crop: np.ndarray, width: int, height: int) -> np.ndarray:
         """Paint over the part of the P/T box inside the text box, so its frame is not read as text."""

@@ -18,3 +18,8 @@ min_line_confidence: 0.5    # text box lines at the top/bottom below this are fr
 mana:
   templates_dir: data/mana_templates
   min_score: 0.7
+text_symbols:                # mana and tap symbols inside the rules text
+  diameters: [20, 27]        # px at the normalized card size, inclusive
+  min_score: 0.86            # symbols on a disk
+  min_glyph_score: 0.8       # tap, untap, energy and colorless printed as a bare glyph
+  min_disk_contrast: 15      # color distance between a symbol's disk and the paper around it
