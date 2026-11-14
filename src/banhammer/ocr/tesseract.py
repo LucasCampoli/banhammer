@@ -2,17 +2,30 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pytesseract
 from pytesseract import Output
 
 
+@dataclass(frozen=True)
+class Word:
+    text: str
+    confidence: float | None
+    left: int  # pixels in the image that was read
+    width: int
+
+    @property
+    def center(self) -> float:
+        return self.left + self.width / 2
+
+
 @dataclass
 class ReadResult:
     text: str
     confidence: float | None = None
+    words: list[Word] = field(default_factory=list)
 
 
 class Tesseract:
@@ -33,13 +46,14 @@ class Tesseract:
             config += f" -c tessedit_char_whitelist={self.whitelist[zone]}"
         data = pytesseract.image_to_data(image, lang=self.lang, config=config, output_type=Output.DICT)
         lines: dict[tuple, list[str]] = {}
-        confs: list[float] = []
-        for i, word in enumerate(data["text"]):
-            if not word.strip():
+        words: list[Word] = []
+        for i, text in enumerate(data["text"]):
+            if not text.strip():
                 continue
             key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
-            lines.setdefault(key, []).append(word)
-            if float(data["conf"][i]) >= 0:
-                confs.append(float(data["conf"][i]) / 100.0)
-        text = "\n".join(" ".join(words) for words in lines.values())
-        return ReadResult(text, sum(confs) / len(confs) if confs else None)
+            lines.setdefault(key, []).append(text)
+            conf = float(data["conf"][i])
+            words.append(Word(text, conf / 100.0 if conf >= 0 else None, data["left"][i], data["width"][i]))
+        confs = [w.confidence for w in words if w.confidence is not None]
+        text = "\n".join(" ".join(line) for line in lines.values())
+        return ReadResult(text, sum(confs) / len(confs) if confs else None, words)
