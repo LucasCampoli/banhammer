@@ -4,6 +4,7 @@ Not supported: three-way Phyrexian hybrids, half-mana and other odd symbols.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -11,6 +12,13 @@ import numpy as np
 
 # symbol diameter / zone height
 SCALE_RANGE = (0.58, 0.74)
+
+
+@dataclass(frozen=True)
+class ManaReading:
+    cost: str
+    confidence: float | None = None
+    left: float | None = None  # x of the first symbol's left edge, in zone pixels
 
 
 def format_mana_cost(symbols: list[str]) -> str:
@@ -53,10 +61,9 @@ def _clean(r: np.ndarray) -> np.ndarray:
     return np.nan_to_num(r, nan=-1, posinf=-1, neginf=-1)
 
 
-def recognize_mana_cost(zone_bgr: np.ndarray, templates: dict, min_score: float = 0.7
-                        ) -> tuple[str, float | None]:
+def recognize_mana_cost(zone_bgr: np.ndarray, templates: dict, min_score: float = 0.7) -> ManaReading:
     if not templates:
-        return "", None
+        return ManaReading("")
     pad = 4
     z = cv2.copyMakeBorder(zone_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
     gray = cv2.cvtColor(z, cv2.COLOR_BGR2GRAY)
@@ -100,5 +107,10 @@ def recognize_mana_cost(zone_bgr: np.ndarray, templates: dict, min_score: float 
             break
     picked = run
     if not picked:
-        return "", None
-    return format_mana_cost([p[3] for p in picked]), sum(p[0] for p in picked) / len(picked)
+        return ManaReading("")
+    _, first_center, first_diameter, _ = picked[0]
+    return ManaReading(
+        cost=format_mana_cost([p[3] for p in picked]),
+        confidence=sum(p[0] for p in picked) / len(picked),
+        left=first_center - first_diameter / 2 - pad,
+    )
