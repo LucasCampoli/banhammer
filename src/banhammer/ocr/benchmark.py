@@ -2,7 +2,9 @@
 
 Only card ids and their strata are versioned (`data/eval/ocr_benchmark.jsonl`).
 The expected text comes from the Scryfall bulk file and the images from
-Scryfall, so no card text or art is committed.
+Scryfall, so no art is committed. The exception is the small gold set
+(`data/eval/ocr_gold.jsonl`): Oracle text has errata, so 30 benchmark cards
+are transcribed by hand as printed.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from .scope import in_ocr_scope
 
 DEFAULT_BULK = ROOT / "data" / "raw" / "oracle-cards.jsonl.gz"
 DEFAULT_BENCHMARK = ROOT / "data" / "eval" / "ocr_benchmark.jsonl"
+DEFAULT_GOLD = ROOT / "data" / "eval" / "ocr_gold.jsonl"
 DEFAULT_IMAGES = ROOT / "images" / "benchmark"
 UNIFORM = "uniform"
 LONG_RULES_CHARS = 300

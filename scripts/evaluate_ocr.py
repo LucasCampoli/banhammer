@@ -3,6 +3,10 @@
 Headline numbers use only the uniform sample, so they estimate accuracy on the
 whole OCR population. The other rows group every benchmark card that has a
 given feature. P/T is scored only on cards that print one.
+
+Oracle text includes errata, so the gold set (benchmark cards transcribed by
+hand as printed) is scored against both references in a second table: the gap
+between the two rows is errata, and the printed row is the reading error.
 """
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ from rich.console import Console
 from rich.table import Table
 
 from banhammer.ocr.benchmark import (
-    DEFAULT_BENCHMARK, DEFAULT_BULK, DEFAULT_IMAGES, STRATA, UNIFORM, cards_by_id, read_benchmark,
+    DEFAULT_BENCHMARK, DEFAULT_BULK, DEFAULT_GOLD, DEFAULT_IMAGES, STRATA, UNIFORM, cards_by_id, read_benchmark,
 )
 from banhammer.ocr.evaluation import cer, flatten, normalize_rules, normalize_type_line
 from banhammer.ocr.pipeline import DEFAULT_CONFIG, OCRPipeline, load_config
@@ -95,10 +99,28 @@ def groups(rows: list[dict], cards: dict[str, dict]) -> list[tuple[str, list[dic
     return out
 
 
+def printed_card(gold: dict) -> dict:
+    """A gold entry shaped like a Scryfall card, so `score` can compare against it."""
+    return {**gold, "oracle_text": gold["rules_text"]}
+
+
+def gold_table(gold: list[dict], rows: list[dict], results: dict[str, dict]) -> Table:
+    by_id = {r["id"]: r for r in rows}
+    oracle_rows = [by_id[g["id"]] for g in gold]
+    printed_rows = [score(printed_card(g), results[g["id"]]) for g in gold]
+    table = Table(title=f"OCR gold set ({len(gold)} cards transcribed as printed)")
+    for column in ("reference", "n", "name %", "mana %", "type %", "P/T % (n)", "rules CER", "flavor CER"):
+        table.add_column(column, justify="left" if column == "reference" else "right", no_wrap=True)
+    table.add_row(*summary_row("Oracle", oracle_rows))
+    table.add_row(*summary_row("printed", printed_rows))
+    return table
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bulk", type=Path, default=DEFAULT_BULK)
     ap.add_argument("--benchmark", type=Path, default=DEFAULT_BENCHMARK)
+    ap.add_argument("--gold", type=Path, default=DEFAULT_GOLD, help="cards transcribed as printed")
     ap.add_argument("--images", type=Path, default=DEFAULT_IMAGES)
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="OCR config to evaluate")
     ap.add_argument("--csv", type=Path, default=Path("outputs/ocr_eval.csv"))
@@ -134,7 +156,13 @@ def main() -> None:
     for label, group in groups(rows, cards):
         if group:
             table.add_row(*summary_row(label, group))
-    Console().print(table)
+    console = Console()
+    console.print(table)
+    gold = read_benchmark(args.gold)
+    unknown = {g["id"] for g in gold} - {e["id"] for e in entries}
+    if unknown:
+        raise SystemExit(f"{len(unknown)} gold cards are not in the benchmark, e.g. {sorted(unknown)[:3]}")
+    console.print(gold_table(gold, rows, dict(zip((e["id"] for e in entries), results))))
     print(f"Per-card CSV: {args.csv}")
 
 
