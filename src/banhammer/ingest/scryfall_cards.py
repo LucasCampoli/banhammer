@@ -47,8 +47,14 @@ class ScryfallCards:
     namespace = "cards"
     filename = "oracle-cards.jsonl.gz"
 
-    def __init__(self, transcriptions: Path = DEFAULT_TRANSCRIPTIONS):
+    def __init__(self, transcriptions: Path | None = DEFAULT_TRANSCRIPTIONS, require_transcriptions: bool = False):
+        """`transcriptions` None indexes every card with its Scryfall text.
+
+        With `require_transcriptions`, a missing transcriptions file is an error
+        instead of a silent fallback to Scryfall text.
+        """
         self.transcriptions = transcriptions
+        self.require_transcriptions = require_transcriptions
 
     def download(self, dest: Path) -> None:
         response = requests.get(BULK_DATA_URL, headers=headers(), timeout=60)
@@ -76,7 +82,12 @@ class ScryfallCards:
         return docs
 
     def _load_transcriptions(self) -> dict[str, tuple[str, OCRCard]]:
+        if self.transcriptions is None:
+            print("scryfall_cards: OCR disabled; using Scryfall text for every card")
+            return {}
         if not self.transcriptions.exists():
+            if self.require_transcriptions:
+                raise FileNotFoundError(f"{self.transcriptions} not found; run scripts/transcribe_cards.py")
             print(f"scryfall_cards: no OCR transcriptions at {self.transcriptions}; "
                   "using Scryfall text (run scripts/transcribe_cards.py)")
             return {}
