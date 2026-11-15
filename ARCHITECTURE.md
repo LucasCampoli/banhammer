@@ -16,7 +16,7 @@ ONLINE
   card.json ─▶ build_queries ─▶ retrieve ─▶ exclude_self ─▶ generate ─▶ BalanceReport
 ```
 
-OCR is a separate command. It reads a card image and prints the text. It does not feed the graph.
+OCR reads a card image and prints the text. It does not feed the graph directly; `scripts/transcribe_cards.py` runs it over the card catalog, and ingestion indexes those transcriptions.
 
 The offline part runs once per data refresh. The online part runs once per evaluated card.
 
@@ -66,7 +66,7 @@ Chat and embeddings both go through OpenAI (`gpt-4o-mini` and `text-embedding-3-
 
 Each source has `download()` and `normalize()`. Raw files go to `data/raw/` and normalized records to `data/processed/<namespace>.jsonl`. A source is skipped when its file is already there.
 
-- **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types`, `keywords` and `modern` (`legal` or `banned`).
+- **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types`, `keywords` and `modern` (`legal` or `banned`). A card in the OCR scope (`banhammer/ocr/scope.py`) uses its OCR transcription for the name, type line, mana cost and rules text when `data/processed/ocr_cards.jsonl` has a usable one read from the same printing; every other card keeps its Scryfall text. `source` (`ocr` or `scryfall`) says which. The other metadata always comes from Scryfall, because the pipeline filters hits by name and legality.
 - **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title` and `section`. Rules are split on the rule number at the start of each line; chapter headings (`2. Parts of a Card`) are skipped.
 
 Cards and rules are short, so each record is one document. Nothing is chunked further.
