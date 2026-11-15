@@ -22,3 +22,9 @@ def test_line_text_drops_set_symbol_and_detached_marks():
              Word("Cleave", 0.9, 160, 0, 100, 40), Word("oe", 0.0, 420, 0, 20, 40), Word("S", 0.8, 600, 0, 20, 40)]
     result = ReadResult("", None, [words])
     assert line_text(result, scale=2.0, max_gap=30, right_limit=290) == "Double Cleave"
+
+
+def test_line_text_keeps_reading_order_when_a_box_is_too_wide():
+    # Tesseract's raw-line mode can return a box that spans the whole line for one word.
+    words = [Word("Instill", 0.9, 15, 0, 177, 40), Word("Infection", 0.9, 0, 0, 852, 40)]
+    assert line_text(ReadResult("", lines=[words]), scale=1.0, max_gap=40) == "Instill Infection"

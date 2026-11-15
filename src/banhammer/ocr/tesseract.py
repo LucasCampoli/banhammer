@@ -8,6 +8,9 @@ import numpy as np
 import pytesseract
 from pytesseract import Output
 
+SINGLE_LINE = 7  # page segmentation mode: one text line
+RAW_LINE = 13  # one text line, without Tesseract's own line detection
+
 
 @dataclass(frozen=True)
 class Word:
@@ -44,8 +47,12 @@ class Tesseract:
         if os.environ.get("TESSERACT_CMD"):
             pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_CMD"]
 
-    def read(self, image: np.ndarray, zone: str) -> ReadResult:
-        config = f"--psm {self.psm.get(zone, 6)}"
+    def page_mode(self, zone: str) -> int:
+        return self.psm.get(zone, 6)
+
+    def read(self, image: np.ndarray, zone: str, psm: int | None = None) -> ReadResult:
+        """Read a zone with its configured page segmentation mode, or `psm` if given."""
+        config = f"--psm {psm or self.page_mode(zone)}"
         if self.tessdata_dir:
             config += f' --tessdata-dir "{self.tessdata_dir}"'
         if zone in self.whitelist:
