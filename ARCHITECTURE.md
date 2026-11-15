@@ -133,6 +133,8 @@ Metrics:
 - **false_alarm_rate**: among the cards expected `ok`, how often the report says `watch` or `likely_ban`.
 - **dropped_per_card**: claims discarded per card for lacking a valid citation, a measure of ungrounded output.
 
+A second table reports the cost of each config: chat tokens in and out per card, and dollars per card and in total (`banhammer/eval/cost.py`). Chat usage comes from LangChain's usage callback around each graph run, so it covers the decomposition, the LLM reranker and the judge; OpenAI's cached input tokens are billed at the cached price. Embedding calls report no usage, so the query embeddings are counted with tiktoken. Prices are the OpenAI list prices in `PRICES`; a model missing there gives a cost of `n/a`. Each card's JSON also keeps `input_tokens`, `cached_tokens`, `output_tokens`, `embedding_tokens` and `cost_usd`.
+
 ## Ablation
 
 Each row adds one technique to the previous one, except row 6, which is an alternative to row 5. Run them all with `python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml configs/ablation/*.yaml`.
