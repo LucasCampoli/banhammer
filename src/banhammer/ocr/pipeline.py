@@ -13,7 +13,7 @@ from .flavor import ITALIC_SLANT, is_measurable, line_styles, slant, split_flavo
 from .mana import ManaReading, Symbol, cost_templates, load_templates, recognize_mana_cost
 from .normalize import normalize
 from .preprocess import preprocess
-from .tesseract import ReadResult, Tesseract, Word
+from .tesseract import RAW_LINE, SINGLE_LINE, ReadResult, Tesseract, Word
 from .type_line import TypeVocabulary, correct_type_line
 from .text_symbols import bare_templates, find_text_symbols, join_words, replace_with_placeholders, restore_symbols
 from .zones import DEFAULT_ZONES, crop_zones, draw_zone_overlay, load_zones
@@ -61,7 +61,7 @@ def line_text(result: ReadResult, scale: float, max_gap: float, right_limit: flo
     the most letters and digits is kept: stray marks are far from the text.
     """
     groups: list[list[Word]] = []
-    for word in sorted(result.words, key=lambda w: w.left):
+    for word in result.words:  # reading order: raw-line boxes can be wider than their word
         if word.center / scale >= right_limit:
             continue
         if groups and word.left - (groups[-1][-1].left + groups[-1][-1].width) <= max_gap:
@@ -217,4 +217,8 @@ class OCRPipeline:
             pre = cv2.copyMakeBorder(pre, 20, 20, 20, 20, cv2.BORDER_REPLICATE)
         if debug:
             cv2.imwrite(str(debug / f"{zone}.png"), pre)
-        return self.reader.read(pre, zone), pre
+        result = self.reader.read(pre, zone)
+        if not result.words and self.reader.page_mode(zone) == SINGLE_LINE:
+            # A dark frame edge in the crop can make Tesseract find no line at all.
+            result = self.reader.read(pre, zone, psm=RAW_LINE)
+        return result, pre
