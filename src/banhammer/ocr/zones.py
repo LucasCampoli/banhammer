@@ -12,13 +12,15 @@ from banhammer.models import ZoneBox
 DEFAULT_ZONES = Path(__file__).resolve().parents[3] / "configs" / "zones.yaml"
 COLORS = {  # BGR
     "name": (0, 0, 255), "mana_cost": (0, 165, 255), "type_line": (0, 200, 0),
-    "rules_text": (255, 0, 0), "power_toughness": (255, 0, 255),
+    "rules_text": (255, 0, 0), "power_toughness": (255, 0, 255), "set_symbol": (0, 255, 255),
 }
 
 
-def load_zones(path: Path | str = DEFAULT_ZONES) -> dict[str, ZoneBox]:
+def load_zones(path: Path | str = DEFAULT_ZONES, frame: str | None = None) -> dict[str, ZoneBox]:
+    """Zones of the base (2015) frame, with the overrides of the given Scryfall `frame` applied."""
     data = yaml.safe_load(Path(path).read_text())
-    return {k: ZoneBox(x0=v[0], y0=v[1], x1=v[2], y1=v[3]) for k, v in data["zones"].items()}
+    boxes = {**data["zones"], **(data.get("frames", {}).get(frame) or {})}
+    return {k: ZoneBox(x0=v[0], y0=v[1], x1=v[2], y1=v[3]) for k, v in boxes.items()}
 
 
 def crop_zones(img: np.ndarray, zones: dict[str, ZoneBox]) -> dict[str, np.ndarray]:

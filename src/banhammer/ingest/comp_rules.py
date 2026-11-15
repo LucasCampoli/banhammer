@@ -15,6 +15,8 @@ RULES_PAGE = "https://magic.wizards.com/en/rules"
 _TXT_LINK = re.compile(r'href="([^"]+\.txt[^"]*)"', re.IGNORECASE)
 _RULE = re.compile(r"^(\d{3}\.\d+[a-z]?)(?:\.)?\s+(.*)$")
 _SECTION = re.compile(r"^(\d{3})\.\s+(\S.*)$")
+_CHAPTER = re.compile(r"^\d\.\s+\S")
+_FIRST_SKIPPED_CHAPTER = "8. Multiplayer Rules"
 
 
 class CompRules:
@@ -42,12 +44,15 @@ def rules_txt_url(html: str, base: str = RULES_PAGE) -> str:
 
 
 def rules_to_documents(text: str) -> list[Document]:
+    """Chapters 1 to 7 only. Chapters 8 (multiplayer) and 9 (casual variants) never apply in Modern."""
     lines = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").splitlines()
     start = _nth(lines, "1. Game Concepts", 2)
-    end = _nth(lines, "Glossary", 2)
     if start is None:
         start = _nth(lines, "1. Game Concepts", 1) or 0
-    body = lines[start:end] if end is not None else lines[start:]
+    end = _nth(lines, _FIRST_SKIPPED_CHAPTER, 2)
+    if end is None:
+        raise ValueError(f"{_FIRST_SKIPPED_CHAPTER!r} not found twice (table of contents and body)")
+    body = lines[start:end]
 
     section = ""
     titles: dict[str, str] = {}
@@ -74,7 +79,6 @@ def rules_to_documents(text: str) -> list[Document]:
                 "parent": parent,
                 "title": titles.get(parent, ""),
                 "section": section,
-                "text": page,
             }),
         ))
         current = None
@@ -92,6 +96,9 @@ def rules_to_documents(text: str) -> list[Document]:
         if section_match:
             flush()
             section = f"{section_match.group(1)}. {section_match.group(2).strip()}"
+            continue
+        if _CHAPTER.match(line):
+            flush()
             continue
         if current is None:
             continue

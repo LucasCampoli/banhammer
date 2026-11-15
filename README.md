@@ -38,9 +38,12 @@ python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml
 python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml configs/ablation/*.yaml   # full ablation
 python -m banhammer evaluate path/to/card.json --format modern --config configs/ablation/4_rerank_llm.yaml
 
-python scripts/download_samples.py          # ~30 cards into images/samples/
+python scripts/download_tessdata.py         # tessdata_best model into data/tessdata/
 python scripts/download_mana_symbols.py     # symbol templates into data/mana_templates/
-python -m banhammer.ocr images/samples/<card>.jpg --debug
+python scripts/download_type_vocabulary.py  # type line words into data/type_vocabulary.json
+python scripts/download_benchmark_images.py # OCR benchmark images into images/benchmark/
+python scripts/transcribe_cards.py          # OCR every card in scope into data/processed/ocr_cards.jsonl
+python -m banhammer.ocr images/benchmark/<card id>.jpg --debug
 python scripts/evaluate_ocr.py              # table + outputs/ocr_eval.csv
 pytest
 ```
@@ -50,6 +53,8 @@ pytest
 `banhammer.eval` prints one row per config and writes every card's result to `outputs/eval/<config>.json`. `configs/naive.yaml` is the baseline without the format filter; `configs/pipeline.yaml` is version 1; `configs/ablation/` adds one stage 2 technique per file (see [ARCHITECTURE.md](ARCHITECTURE.md#ablation)). The configs with `hybrid: true` build BM25 from `data/processed/cards.jsonl`, so `python -m banhammer.ingest` has to run first on a new machine (`data/` is not in git). `python -m banhammer.index` is only needed if your Pinecone project does not have the index yet. The embedding model in `configs/ingest.yaml` and `configs/pipeline.yaml` has to be the same one.
 
 `--debug` saves the zone overlay and the preprocessed crops to `outputs/debug/<card>/`. Use `--photo` for real photos (perspective correction).
+
+The OCR only transcribes single-faced cards with the 2003 or 2015 frame that are not planeswalkers (`banhammer/ocr/scope.py`, about 94% of the indexed cards); the rest keep their Scryfall text. `transcribe_cards.py` downloads their images into `images/cards/` and takes about two hours with 16 cores; it resumes where it stopped. Ingestion uses a card's transcription when there is one (`source: ocr` in the metadata) and its Scryfall text otherwise, so it also works without running it. `python -m banhammer.ingest --only scryfall_cards --card-text ocr` rebuilds the card records from the transcriptions (and fails if there are none); `--card-text scryfall` rebuilds them with Scryfall text for every card, for example to compare the two indexes. The benchmark in `data/eval/ocr_benchmark.jsonl` lists 150 cards drawn uniformly from that population plus a few per risky feature (2003 frame, legendary, white border, low-resolution scan, ...). `scripts/build_ocr_benchmark.py` made it; do not rebuild it unless you want results that cannot be compared with older runs. The benchmark and evaluation scripts read the Scryfall bulk from `data/raw/oracle-cards.jsonl.gz` (pass `--bulk` for another file). Rules text is compared with Oracle text after removing the most common templating changes, so the error still includes some errata. `data/eval/ocr_gold.jsonl` has 30 of those cards transcribed by hand as printed; the evaluation scores them against both references, and the gap between the two is errata, not reading error.
 
 Zone coordinates are in `configs/zones.yaml` (fractions of the 672x936 card) and the OCR settings in `configs/ocr.yaml`.
 

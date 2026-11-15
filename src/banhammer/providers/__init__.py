@@ -2,6 +2,6 @@
 
 from banhammer.providers.embeddings import get_embeddings
 from banhammer.providers.llm import get_llm
-from banhammer.providers.vector_store import StoreFactory, index_name_for
+from banhammer.providers.vector_store import StoreFactory
 
-__all__ = ["StoreFactory", "get_embeddings", "get_llm", "index_name_for"]
+__all__ = ["StoreFactory", "get_embeddings", "get_llm"]

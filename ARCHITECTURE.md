@@ -18,7 +18,7 @@ ONLINE
                (decompose)   dense + BM25 → RRF
 ```
 
-OCR is a separate command. It reads a card image and prints the text. It does not feed the graph.
+OCR reads a card image and prints the text. It does not feed the graph directly; `scripts/transcribe_cards.py` runs it over the card catalog, and ingestion indexes those transcriptions.
 
 The offline part runs once per data refresh. The online part runs once per evaluated card.
 
@@ -27,11 +27,11 @@ The offline part runs once per data refresh. The online part runs once per evalu
 | Source | Where it comes from | What is kept |
 | --- | --- | --- |
 | Card catalog | Scryfall bulk data, `oracle_cards` file. The download URL is read from `https://api.scryfall.com/bulk-data` (field `jsonl_download_uri`, gzipped JSONL, one card per line). | One record per Oracle card that is `legal` or `banned` in Modern or Standard. Non-playable layouts (`art_series`, `token`, `double_faced_token`, `emblem`, `planar`, `scheme`, `vanguard`, `front_card`) are dropped. |
-| Comprehensive Rules | Plain-text file linked from `https://magic.wizards.com/en/rules` (the file name changes with every rules update, so the link is scraped from that page). | One record per numbered rule and subrule (`702.19`, `702.19a`, ...), with its `Example:` lines. The table of contents, the glossary and the credits are skipped. |
+| Comprehensive Rules | Plain-text file linked from `https://magic.wizards.com/en/rules` (the file name changes with every rules update, so the link is scraped from that page). | One record per numbered rule and subrule (`702.19`, `702.19a`, ...), with its `Example:` lines. Only chapters 1 to 7 are kept: chapter 8 (multiplayer) and chapter 9 (casual variants such as Commander) never apply in Modern or Standard, which are played one against one. The table of contents, the glossary and the credits are skipped too. |
 
 Scryfall asks for an identifiable `User-Agent`; it is built from `BANHAMMER_CONTACT`.
 
-Banned cards stay in the catalog on purpose: they are the clearest examples of what breaks the format, and the generator sees them flagged as `banned`.
+Banned cards stay in the catalog on purpose: they are the clearest examples of what breaks the format. The generator sees them marked `(banned in <format>)` and is told to use them only as precedents, never as combo pieces, since they cannot be played.
 
 ## Configuration and secrets
 
@@ -80,8 +80,8 @@ Chat and embeddings both go through OpenAI (`gpt-4o-mini` and `text-embedding-3-
 
 Each source has `download()` and `normalize()`. Raw files go to `data/raw/` and normalized records to `data/processed/<namespace>.jsonl`. A source is skipped when its file is already there.
 
-- **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types` (type line before the dash), `type_words` (the same as a list, e.g. `["Legendary", "Creature"]`), `keywords`, `formats` (the formats where the card is legal or banned), `banned` (the formats where it is banned) and the text.
-- **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title`, `section` and the text. Rules are split on the rule number at the start of each line.
+- **`scryfall_cards`**: text is `"<name> | <type_line> | <mana_cost> | <oracle_text>"`. Faces of double-faced, split and adventure cards are joined. Metadata: `oracle_id`, `name`, `mana_cost`, `cmc`, `colors`, `types` (type line before the dash), `type_words` (the same as a list, e.g. `["Legendary", "Creature"]`), `keywords`, `formats` (the formats where the card is legal or banned), `banned` (the formats where it is banned), `source` and the text. A card in the OCR scope (`banhammer/ocr/scope.py`) uses its OCR transcription for the name, type line, mana cost and rules text when `data/processed/ocr_cards.jsonl` has a usable one read from the same printing; every other card keeps its Scryfall text. `source` (`ocr` or `scryfall`) says which. `--card-text scryfall` turns the OCR off and `--card-text ocr` requires it; either one rebuilds the card records. The other metadata always comes from Scryfall, because the pipeline filters hits by name and legality.
+- **`comp_rules`**: text is the rule number and its text, followed by its examples. Metadata: `rule`, `parent`, `title`, `section` and the text. Rules are split on the rule number at the start of each line; chapter headings (`2. Parts of a Card`) are skipped.
 
 Cards and rules are short, so each record is one document. Nothing is chunked further.
 

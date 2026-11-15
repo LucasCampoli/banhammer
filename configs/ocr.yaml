@@ -6,6 +6,7 @@ preprocess:
   threshold: none            # none | otsu | adaptive
 tesseract:
   lang: eng
+  tessdata_dir: data/tessdata  # tessdata_best models (scripts/download_tessdata.py); null uses the system ones
   psm:
     name: 7
     type_line: 7
@@ -13,6 +14,13 @@ tesseract:
     power_toughness: 7
   whitelist:
     power_toughness: "0123456789/*+-"
+min_line_confidence: 0.5    # text box lines at the top/bottom below this are frame debris
+type_vocabulary: data/type_vocabulary.json  # scripts/download_type_vocabulary.py
 mana:
   templates_dir: data/mana_templates
   min_score: 0.7
+text_symbols:                # mana and tap symbols inside the rules text
+  diameters: [20, 27]        # px at the normalized card size, inclusive
+  min_score: 0.86            # symbols on a disk
+  min_glyph_score: 0.8       # tap, untap, energy and colorless printed as a bare glyph
+  min_disk_contrast: 15      # color distance between a symbol's disk and the paper around it

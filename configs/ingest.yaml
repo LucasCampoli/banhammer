@@ -7,10 +7,7 @@ sources:
 raw_dir: data/raw
 processed_dir: data/processed
 embeddings:
-  provider: openai
   model: text-embedding-3-small
-vector_store:
-  provider: pinecone
 index:
   cloud: aws
   region: us-east-1

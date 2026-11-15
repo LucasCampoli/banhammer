@@ -4,7 +4,10 @@ from __future__ import annotations
 import os
 import re
 import time
-from typing import Any
+
+from langchain_core.embeddings import Embeddings
+from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone, ServerlessSpec
 
 
 def index_name_for(model: str) -> str:
@@ -14,58 +17,38 @@ def index_name_for(model: str) -> str:
     return name[:45].rstrip("-")
 
 
-def _index_ready(description: Any) -> bool:
-    status = description.status
-    if isinstance(status, dict):
-        return bool(status.get("ready"))
-    return bool(getattr(status, "ready", False))
-
-
 class StoreFactory:
-    """One store per namespace, built from the vector_store config block."""
+    """One store per namespace of the index built for this embedding model."""
 
-    def __init__(self, store_cfg: dict, embeddings: Any, model: str, index_cfg: dict | None = None) -> None:
-        provider = store_cfg.get("provider", "pinecone")
-        if provider != "pinecone":
-            raise ValueError(f"vector_store provider must be 'pinecone', got {provider!r}")
+    def __init__(self, embeddings: Embeddings, model: str) -> None:
         self.embeddings = embeddings
         self.index_name = index_name_for(model)
-        self.index_cfg = index_cfg or {}
-        self._stores: dict[str, Any] = {}
+        self._stores: dict[str, PineconeVectorStore] = {}
 
-    def ensure_index(self) -> str:
-        """Create the Pinecone index when it is missing."""
+    def ensure_index(self, index_cfg: dict) -> str:
+        """Create the Pinecone index when it is missing. `index_cfg` is the `index` block of ingest.yaml."""
         api_key = os.environ.get("PINECONE_API_KEY")
         if not api_key:
             raise RuntimeError("PINECONE_API_KEY is not set")
-        from pinecone import Pinecone, ServerlessSpec
-
         client = Pinecone(api_key=api_key)
         if self.index_name not in client.list_indexes().names():
             client.create_index(
                 name=self.index_name,
-                dimension=int(self.index_cfg.get("dimension", 1536)),
-                metric=self.index_cfg.get("metric", "cosine"),
-                spec=ServerlessSpec(
-                    cloud=self.index_cfg.get("cloud", "aws"),
-                    region=self.index_cfg.get("region", "us-east-1"),
-                ),
+                dimension=index_cfg["dimension"],
+                metric=index_cfg["metric"],
+                spec=ServerlessSpec(cloud=index_cfg["cloud"], region=index_cfg["region"]),
             )
         for _ in range(60):
-            if _index_ready(client.describe_index(self.index_name)):
+            if client.describe_index(self.index_name).status.ready:
                 return self.index_name
             time.sleep(2)
         raise TimeoutError(f"Pinecone index {self.index_name} was not ready")
 
-    def get(self, namespace: str) -> Any:
-        if namespace in self._stores:
-            return self._stores[namespace]
-        from langchain_pinecone import PineconeVectorStore
-
-        store = PineconeVectorStore(
-            index_name=self.index_name,
-            embedding=self.embeddings,
-            namespace=namespace,
-        )
-        self._stores[namespace] = store
-        return store
+    def get(self, namespace: str) -> PineconeVectorStore:
+        if namespace not in self._stores:
+            self._stores[namespace] = PineconeVectorStore(
+                index_name=self.index_name,
+                embedding=self.embeddings,
+                namespace=namespace,
+            )
+        return self._stores[namespace]

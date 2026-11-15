@@ -39,6 +39,7 @@ class OCRCard(BaseModel):
     mana_cost: str = ""
     type_line: str = ""
     rules_text: str = ""
+    flavor_text: str = ""
     power: str | None = None
     toughness: str | None = None
     confidence: dict[str, float | None] = Field(default_factory=dict)

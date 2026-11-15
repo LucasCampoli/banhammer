@@ -11,23 +11,15 @@ from banhammer.providers import StoreFactory, get_embeddings
 NAMESPACES = ("cards", "rules")
 
 
-def index_processed(cfg: dict, factory: StoreFactory | None = None) -> dict[str, int]:
-    embeddings = get_embeddings(cfg["embeddings"]) if factory is None else factory.embeddings
-    model = cfg["embeddings"].get("model") or cfg["embeddings"]["provider"]
-    factory = factory or StoreFactory(
-        cfg["vector_store"], embeddings, model=model, index_cfg=cfg.get("index")
-    )
-    if cfg["vector_store"]["provider"] == "pinecone":
-        print(f"index: {factory.ensure_index()}")
-    processed = Path(cfg.get("processed_dir", "data/processed"))
-    if not processed.is_absolute():
-        processed = ROOT / processed
-    batch_size = int(cfg.get("index", {}).get("batch_size", 100))
+def index_processed(cfg: dict) -> dict[str, int]:
+    stores = StoreFactory(get_embeddings(cfg["embeddings"]), model=cfg["embeddings"]["model"])
+    print(f"index: {stores.ensure_index(cfg['index'])}")
+    processed = ROOT / cfg["processed_dir"]
+    batch_size = cfg["index"]["batch_size"]
     counts: dict[str, int] = {}
     for namespace in NAMESPACES:
-        path = processed / f"{namespace}.jsonl"
-        docs = read_jsonl(path)
-        store = factory.get(namespace)
+        docs = read_jsonl(processed / f"{namespace}.jsonl")
+        store = stores.get(namespace)
         for start in range(0, len(docs), batch_size):
             batch = docs[start:start + batch_size]
             store.add_documents(batch, ids=[doc.id for doc in batch], async_req=False)

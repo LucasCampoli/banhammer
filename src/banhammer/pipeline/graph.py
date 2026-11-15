@@ -11,8 +11,8 @@ the first `context_cards` of them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
@@ -34,9 +34,11 @@ Write a balance report:
 - power_assessment: power versus cost compared with the comparable cards retrieved. Cite those cards in comparable_ids.
 - risk: ok, watch, or likely_ban, and a confidence between 0 and 1.
 
+Some card hits are marked (banned in ...). They cannot be played in those formats, so never use
+them as combo pieces there. Use them only as precedents: a card close to a banned card is a warning sign.
+
 Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
-Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits.
-Cards marked (banned in ...) are banned in that format."""
+Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits."""
 
 
 def search(stores: StoreFactory, query: Query, k: int) -> list[Hit]:
@@ -88,7 +90,8 @@ def describe(card: CardInput) -> str:
     return text if not details else f"{text}\n" + "; ".join(details)
 
 
-def _numbered(hits: list[Hit]) -> tuple[dict[str, str], str]:
+def number_hits(hits: list[Hit]) -> tuple[dict[str, str], str]:
+    """Label hits C1, C2, ... and R1, R2, ... Returns label -> hit id, and the prompt block."""
     labels: dict[str, str] = {}
     lines: list[str] = []
     cards = rules = 0
@@ -152,9 +155,9 @@ def validate_citations(report: BalanceReport, labels: dict[str, str]) -> tuple[B
     return cleaned, dropped
 
 
-def judge(llm: Any, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tuple[BalanceReport, int]:
+def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tuple[BalanceReport, int]:
     """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits."""
-    labels, numbered = _numbered(hits)
+    labels, numbered = number_hits(hits)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
     result = llm.with_structured_output(BalanceReport).invoke([
         SystemMessage(content=_SYSTEM.format(format=fmt.title())),
@@ -177,7 +180,7 @@ def build_graph(config: dict | Path | str):
     cfg = config if isinstance(config, dict) else load_yaml(config)
     embeddings = get_embeddings(cfg["embeddings"])
     model = cfg["embeddings"].get("model") or "text-embedding-3-small"
-    stores = StoreFactory(cfg["vector_store"], embeddings, model=model, index_cfg=cfg.get("index"))
+    stores = StoreFactory(embeddings, model=model)
     llm = get_llm(cfg["llm"])
     k = int(cfg.get("k", 10))
     bm25 = BM25Index(_processed_dir(cfg) / "cards.jsonl") if cfg.get("hybrid", False) else None
