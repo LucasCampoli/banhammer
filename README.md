@@ -38,6 +38,7 @@ python scripts/download_tessdata.py         # tessdata_best model into data/tess
 python scripts/download_mana_symbols.py     # symbol templates into data/mana_templates/
 python scripts/download_type_vocabulary.py  # type line words into data/type_vocabulary.json
 python scripts/download_benchmark_images.py # OCR benchmark images into images/benchmark/
+python scripts/transcribe_cards.py          # OCR every card in scope into data/processed/ocr_cards.jsonl
 python -m banhammer.ocr images/benchmark/<card id>.jpg --debug
 python scripts/evaluate_ocr.py              # table + outputs/ocr_eval.csv
 pytest
@@ -47,7 +48,7 @@ pytest
 
 `--debug` saves the zone overlay and the preprocessed crops to `outputs/debug/<card>/`. Use `--photo` for real photos (perspective correction).
 
-The OCR only transcribes single-faced cards with the 2003 or 2015 frame that are not planeswalkers (`banhammer/ocr/scope.py`, about 94% of the indexed cards); the rest keep their Scryfall text. The benchmark in `data/eval/ocr_benchmark.jsonl` lists 150 cards drawn uniformly from that population plus a few per risky feature (2003 frame, legendary, white border, low-resolution scan, ...). `scripts/build_ocr_benchmark.py` made it; do not rebuild it unless you want results that cannot be compared with older runs. The benchmark and evaluation scripts read the Scryfall bulk from `data/raw/oracle-cards.jsonl.gz` (pass `--bulk` for another file). Rules text is compared with Oracle text after removing the most common templating changes, so the error still includes some errata. `data/eval/ocr_gold.jsonl` has 30 of those cards transcribed by hand as printed; the evaluation scores them against both references, and the gap between the two is errata, not reading error.
+The OCR only transcribes single-faced cards with the 2003 or 2015 frame that are not planeswalkers (`banhammer/ocr/scope.py`, about 94% of the indexed cards); the rest keep their Scryfall text. `transcribe_cards.py` downloads their images into `images/cards/` and takes about two hours with 16 cores; it resumes where it stopped. Ingestion uses a card's transcription when there is one (`source: ocr` in the metadata) and its Scryfall text otherwise, so it also works without running it. After a new transcription run, delete `data/processed/cards.jsonl` and run `python -m banhammer.ingest --only scryfall_cards` to rebuild the card records. The benchmark in `data/eval/ocr_benchmark.jsonl` lists 150 cards drawn uniformly from that population plus a few per risky feature (2003 frame, legendary, white border, low-resolution scan, ...). `scripts/build_ocr_benchmark.py` made it; do not rebuild it unless you want results that cannot be compared with older runs. The benchmark and evaluation scripts read the Scryfall bulk from `data/raw/oracle-cards.jsonl.gz` (pass `--bulk` for another file). Rules text is compared with Oracle text after removing the most common templating changes, so the error still includes some errata. `data/eval/ocr_gold.jsonl` has 30 of those cards transcribed by hand as printed; the evaluation scores them against both references, and the gap between the two is errata, not reading error.
 
 Zone coordinates are in `configs/zones.yaml` (fractions of the 672x936 card) and the OCR settings in `configs/ocr.yaml`.
 
