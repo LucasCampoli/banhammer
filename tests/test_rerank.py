@@ -58,11 +58,14 @@ class _Doc:
 
 
 class _FakeStore:
+    ks = []
+
     def __init__(self, namespace, calls):
         self.namespace, self.calls = namespace, calls
 
     def similarity_search_with_score(self, text, k, filter=None):
         self.calls.append((self.namespace, text, filter))
+        self.ks.append((self.namespace, k))
         prefix = "c" if self.namespace == "cards" else "r"
         return [(_Doc(f"{prefix}{i}", f"{prefix}{i}"), 1.0 - i / 10) for i in range(1, 4)]
 
@@ -71,6 +74,7 @@ def _run_graph(monkeypatch, cfg, llm):
     from banhammer.pipeline import graph as graph_module
 
     calls = []
+    _FakeStore.ks = []
 
     class Stores:
         def __init__(self, *args, **kwargs):
@@ -119,3 +123,10 @@ def test_llm_rerank_graph_sends_top_cards_to_judge(monkeypatch):
     assert _ids(result["hits"]) == ["c2", "c1", "c3", "r1", "r2", "r3"]
     judge_prompt = llm.messages[1].content
     assert "[C1] c2 text" in judge_prompt and "c1 text" not in judge_prompt and "[R3] r3 text" in judge_prompt
+
+
+def test_card_k_widens_only_catalog_queries(monkeypatch):
+    from banhammer.models import BalanceReport
+
+    _run_graph(monkeypatch, {"card_k": 50}, FakeLLM(BalanceReport(risk="ok", confidence=1)))
+    assert _FakeStore.ks == [("cards", 50), ("rules", 3)]

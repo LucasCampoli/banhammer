@@ -6,7 +6,8 @@ every claim in the report must cite a retrieved hit; claims that do not are disc
 results of several queries in one namespace are merged with reciprocal rank fusion. With
 `hybrid: true` every catalog query also runs against a BM25 index of the catalog. With
 `rerank: llm | cross_encoder` the first `candidates` cards are reordered, and the judge sees only
-the first `context_cards` of them.
+the first `context_cards` of them. `card_k` (default `k`) sets how many cards each catalog query
+returns, so the reranker can see a wider pool than the rules queries.
 """
 from __future__ import annotations
 
@@ -196,6 +197,8 @@ def build_graph(config: dict | Path | str):
     stores = StoreFactory(embeddings, model=model)
     llm = get_llm(cfg["llm"])
     k = int(cfg.get("k", 10))
+    # Catalog queries can go wider than rules queries: every rule hit reaches the judge, cards are cut later.
+    card_k = int(cfg.get("card_k", k))
     bm25 = BM25Index(_processed_dir(cfg) / "cards.jsonl") if cfg.get("hybrid", False) else None
     reranker = str(cfg.get("rerank") or "none")
     if reranker not in RERANKERS:
@@ -211,9 +214,10 @@ def build_graph(config: dict | Path | str):
     def retrieve(state: PipelineState) -> dict:
         lists: dict[str, list[list[Hit]]] = {}
         for query in state.get("queries") or []:
-            lists.setdefault(query.namespace, []).append(search(stores, query, k))
+            query_k = card_k if query.namespace == "cards" else k
+            lists.setdefault(query.namespace, []).append(search(stores, query, query_k))
             if bm25 is not None and query.namespace == "cards":
-                lists["cards"].append(bm25.search(query, k))
+                lists["cards"].append(bm25.search(query, query_k))
         return {"hits": fuse_by_namespace(lists)}
 
     def drop_self(state: PipelineState) -> dict:
