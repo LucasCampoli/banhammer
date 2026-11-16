@@ -70,7 +70,7 @@ class _FakeStore:
         return [(_Doc(f"{prefix}{i}", f"{prefix}{i}"), 1.0 - i / 10) for i in range(1, 4)]
 
 
-def _run_graph(monkeypatch, cfg, llm):
+def _run_graph(monkeypatch, cfg, llm, llm_for=None):
     from banhammer.pipeline import graph as graph_module
 
     calls = []
@@ -85,7 +85,7 @@ def _run_graph(monkeypatch, cfg, llm):
 
     monkeypatch.setattr(graph_module, "load_env", lambda: None)
     monkeypatch.setattr(graph_module, "get_embeddings", lambda cfg: None)
-    monkeypatch.setattr(graph_module, "get_llm", lambda cfg: llm)
+    monkeypatch.setattr(graph_module, "get_llm", llm_for or (lambda cfg: llm))
     monkeypatch.setattr(graph_module, "StoreFactory", Stores)
     base = {"llm": {}, "embeddings": {}, "k": 3}
     result = graph_module.build_graph({**base, **cfg}).invoke({"card": CARD, "format": "standard"})
@@ -130,3 +130,16 @@ def test_card_k_widens_only_catalog_queries(monkeypatch):
 
     _run_graph(monkeypatch, {"card_k": 50}, FakeLLM(BalanceReport(risk="ok", confidence=1)))
     assert _FakeStore.ks == [("cards", 50), ("rules", 3)]
+
+
+
+def test_decompose_llm_writes_queries_and_llm_judges(monkeypatch):
+    from banhammer.models import BalanceReport, CardAnalysis, Counterpart
+
+    judge_llm = FakeLLM(BalanceReport(risk="ok", confidence=1))
+    decompose_llm = FakeLLM(CardAnalysis(counterparts=[Counterpart(description="Untap target permanent.")]))
+    calls, _ = _run_graph(monkeypatch, {"decompose": True, "decompose_llm": {"model": "strong"}}, judge_llm,
+                          llm_for=lambda cfg: decompose_llm if cfg.get("model") == "strong" else judge_llm)
+    assert decompose_llm.schema is CardAnalysis
+    assert judge_llm.schema is BalanceReport
+    assert ("cards", "Untap target permanent.", {"formats": {"$in": ["standard"]}}) in calls

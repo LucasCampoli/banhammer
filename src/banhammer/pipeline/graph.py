@@ -7,7 +7,8 @@ results of several queries in one namespace are merged with reciprocal rank fusi
 `hybrid: true` every catalog query also runs against a BM25 index of the catalog. With
 `rerank: llm | cross_encoder` the first `candidates` cards are reordered, and the judge sees only
 the first `context_cards` of them. `card_k` (default `k`) sets how many cards each catalog query
-returns, so the reranker can see a wider pool than the rules queries.
+returns, so the reranker can see a wider pool than the rules queries. `decompose_llm` (default
+`llm`) sets the model that writes the expanded queries; the reranker and the judge keep `llm`.
 """
 from __future__ import annotations
 
@@ -196,6 +197,8 @@ def build_graph(config: dict | Path | str):
     model = cfg["embeddings"].get("model") or "text-embedding-3-small"
     stores = StoreFactory(embeddings, model=model)
     llm = get_llm(cfg["llm"])
+    # The decomposition writes the counterpart queries and drives recall; it can use a stronger model.
+    decompose_llm = get_llm(cfg["decompose_llm"]) if cfg.get("decompose_llm") else llm
     k = int(cfg.get("k", 10))
     # Catalog queries can go wider than rules queries: every rule hit reaches the judge, cards are cut later.
     card_k = int(cfg.get("card_k", k))
@@ -208,7 +211,7 @@ def build_graph(config: dict | Path | str):
     context_cards = None if context_cards is None else int(context_cards)
 
     def make_queries(state: PipelineState) -> dict:
-        queries, analysis = build_queries(state["card"], state.get("format") or "modern", cfg, llm)
+        queries, analysis = build_queries(state["card"], state.get("format") or "modern", cfg, decompose_llm)
         return {"queries": queries, "analysis": analysis}
 
     def retrieve(state: PipelineState) -> dict:
