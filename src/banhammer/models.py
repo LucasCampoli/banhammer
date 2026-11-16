@@ -74,7 +74,7 @@ class CardInput(BaseModel):
     """Card to evaluate. Extra Scryfall fields are ignored.
 
     cmc and colors are filled from the mana cost when the JSON leaves them out.
-    If the card itself has no mana cost, the face costs are added together.
+    A split card adds the costs of its halves; any other multi-face card uses its front face.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -116,10 +116,11 @@ class CardInput(BaseModel):
         faces = data.get("card_faces") or []
         mana = data.get("mana_cost") or ""
         if data.get("cmc") is None:
-            if mana:
-                data["cmc"] = mana_value(str(mana))
+            costs = [str((face or {}).get("mana_cost") or "") for face in faces] or [str(mana)]
+            if data.get("layout") == "split":
+                data["cmc"] = sum(mana_value(cost) for cost in costs)
             else:
-                data["cmc"] = sum(mana_value(str((face or {}).get("mana_cost") or "")) for face in faces)
+                data["cmc"] = mana_value(costs[0])
         if "colors" not in data or data["colors"] is None:
             blob = str(mana) + "".join(str((face or {}).get("mana_cost") or "") for face in faces)
             data["colors"] = colors_in(blob)
