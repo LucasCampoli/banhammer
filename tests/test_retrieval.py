@@ -89,6 +89,8 @@ def test_card_filter_combinations():
     assert card_filter() is None
     assert card_filter("modern") == {"formats": {"$in": ["modern"]}}
     assert card_filter(card_type="creature") == {"type_words": {"$in": ["Creature"]}}
+    assert card_filter(card_type="Artifact Creature") == {"type_words": {"$in": ["Creature"]}}
+    assert card_filter(card_type="  ") is None
     assert card_filter(max_mana_value=3) == {"cmc": {"$lte": 3.0}}
     assert card_filter("standard", "artifact", 2) == {"$and": [
         {"formats": {"$in": ["standard"]}},
