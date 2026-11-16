@@ -1,7 +1,8 @@
 # Ablation step 7: the decomposition with a stronger model, without the type and mana value filter.
 # Measured on the gold set counterparts alone, gpt-5.4-mini placed more combo pieces in the top 10
 # than gpt-4o-mini, and the filter dropped pieces whenever the counterpart's type was guessed
-# wrong. Only the decomposition uses decompose_llm; the judge keeps llm and sees 5 cards.
+# wrong. Only the decomposition uses decompose_llm; the LLM reranker and the judge keep llm, and
+# the judge sees the top 5 reranked cards.
 # gpt-5.4-mini is a reasoning model: it takes reasoning_effort instead of temperature and costs
 # about 30x more per card than gpt-4o-mini (one call per card).
 llm:
@@ -16,4 +17,6 @@ k: 10
 format_filter: true
 decompose: true
 hybrid: true
-context_cards: 5    # cards the judge sees, in fused order
+rerank: llm
+candidates: 25      # fused cards that go to the reranker
+context_cards: 5    # cards the judge sees after reranking
