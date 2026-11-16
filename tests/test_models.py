@@ -1,7 +1,18 @@
 import pytest
 from pydantic import ValidationError
 
-from banhammer.models import OCRCard, ZoneBox
+from banhammer.models import CardInput, OCRCard, ZoneBox
+
+
+@pytest.mark.parametrize(("layout", "expected"), [("adventure", 3.0), ("modal_dfc", 3.0), ("split", 5.0)])
+def test_cardinput_mana_value_of_multi_face_cards(layout, expected):
+    faces = [{"name": "Front", "mana_cost": "{2}{R}"}, {"name": "Back", "mana_cost": "{1}{R}"}]
+    card = CardInput(name="Front // Back", mana_cost="{2}{R} // {1}{R}", layout=layout, card_faces=faces)
+    assert card.cmc == expected
+
+
+def test_cardinput_mana_value_of_a_single_face_card():
+    assert CardInput(name="Bolt", mana_cost="{R}").cmc == 1.0
 
 
 def test_ocrcard_defaults_and_json_roundtrip():
