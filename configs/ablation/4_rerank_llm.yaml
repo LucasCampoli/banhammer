@@ -3,14 +3,10 @@
 # only the top 5 reach the judge. This row changes two things at once, rerank and context_cards,
 # because the proposal sends the top 5 to the judge.
 llm:
-  provider: openai
   model: gpt-4o-mini
   temperature: 0
 embeddings:
-  provider: openai
   model: text-embedding-3-small
-vector_store:
-  provider: pinecone
 k: 10
 format_filter: true
 decompose: true

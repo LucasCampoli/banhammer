@@ -2,14 +2,10 @@
 # Every catalog query runs twice, dense in Pinecone and lexical with BM25, and all lists are
 # fused with RRF. BM25 needs data/processed/cards.jsonl (python -m banhammer.ingest).
 llm:
-  provider: openai
   model: gpt-4o-mini
   temperature: 0
 embeddings:
-  provider: openai
   model: text-embedding-3-small
-vector_store:
-  provider: pinecone
 k: 10
 format_filter: true
 decompose: true
