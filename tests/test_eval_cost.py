@@ -60,6 +60,7 @@ def test_retrieval_only_scores_combo_cards_without_a_judge(tmp_path, monkeypatch
 
     class Graph:
         def invoke(self, state):
+            built["card"] = state["card"].name
             hit = Hit(id="1", namespace="cards", text="t", metadata={"name": "Pestermite"}, source="dense")
             return {"hits": [hit], "queries": []}
 
@@ -79,3 +80,5 @@ def test_retrieval_only_scores_combo_cards_without_a_judge(tmp_path, monkeypatch
     assert built["judge_report"] is False
     assert summary["cards"] == 1 and summary["recall@5"] == 0.5 and summary["risk_accuracy"] is None
     assert (tmp_path / "cfg-retrieval.json").exists()
+    assert built["card"] == "Test Card"
+    assert summary["groups"]["modern watch"]["recall@10"] == 0.5
