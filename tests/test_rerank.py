@@ -83,7 +83,7 @@ def _run_graph(monkeypatch, cfg, llm):
     monkeypatch.setattr(graph_module, "get_embeddings", lambda cfg: None)
     monkeypatch.setattr(graph_module, "get_llm", lambda cfg: llm)
     monkeypatch.setattr(graph_module, "StoreFactory", Stores)
-    base = {"llm": {}, "embeddings": {}, "vector_store": {}, "k": 3}
+    base = {"llm": {}, "embeddings": {}, "k": 3}
     result = graph_module.build_graph({**base, **cfg}).invoke({"card": CARD, "format": "standard"})
     return calls, result
 
