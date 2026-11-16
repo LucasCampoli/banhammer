@@ -1,0 +1,17 @@
+# Ablation step 6: step 4 (ablation/4_rerank_llm.yaml) without the type and mana value filter,
+# with a wider candidate pool. The filter dropped combo pieces whenever the LLM guessed the
+# counterpart's type or cost wrong, and many pieces ranked just past k: 10. Each catalog query
+# now returns 50 cards and the LLM reranker scores the first 100 fused ones.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+k: 10               # rules queries
+card_k: 50          # catalog queries, dense and BM25
+format_filter: true
+decompose: true
+hybrid: true
+rerank: llm
+candidates: 100     # fused cards that go to the reranker
+context_cards: 5    # cards the judge sees after reranking
