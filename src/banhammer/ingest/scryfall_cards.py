@@ -61,7 +61,9 @@ class ScryfallCards:
         response.raise_for_status()
         payload = response.json()
         items = payload["data"] if isinstance(payload, dict) else payload
-        match = next(item for item in items if item.get("type") == "oracle_cards")
+        match = next((item for item in items if item.get("type") == "oracle_cards"), None)
+        if match is None:
+            raise RuntimeError(f"no oracle_cards entry in {BULK_DATA_URL}")
         uri = match.get("jsonl_download_uri") or match["download_uri"]
         download(uri, dest)
 
