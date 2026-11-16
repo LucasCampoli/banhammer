@@ -78,12 +78,15 @@ def search(stores: StoreFactory, query: Query, k: int) -> list[Hit]:
 
 
 def exclude_self(card: CardInput, hits: list[Hit]) -> list[Hit]:
-    """A real card being re-checked should not come back as its own result."""
+    """A real card being re-checked should not come back as its own result.
+
+    It is matched by name, or by oracle id when the card has one (an anonymized card keeps its id).
+    """
     names = card.names()
     kept = []
     for hit in hits:
         name = str(hit.metadata.get("name", "")).casefold()
-        if name and name in names:
+        if (name and name in names) or (card.oracle_id and hit.id == card.oracle_id):
             continue
         kept.append(hit)
     return kept
