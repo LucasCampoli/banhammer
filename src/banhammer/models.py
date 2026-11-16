@@ -209,5 +209,6 @@ class BalanceReport(BaseModel):
     wording_issues: list[WordingIssue] = Field(default_factory=list)
     combos: list[Combo] = Field(default_factory=list)
     power_assessment: PowerAssessment = Field(default_factory=PowerAssessment)
+    risk_rationale: str = Field("", description="Why the risk level follows from the risk criteria.")
     risk: Literal["ok", "watch", "likely_ban"]
     confidence: float = Field(ge=0, le=1)

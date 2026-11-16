@@ -32,7 +32,20 @@ Write a balance report:
 - wording_issues: problems with how the card is written. Cite the rule labels you rely on in rule_ids.
 - combos: dangerous interactions. Cite the card labels involved in card_ids and list the sequence of plays.
 - power_assessment: power versus cost compared with the comparable cards retrieved. Cite those cards in comparable_ids.
+- risk_rationale: one or two sentences that apply the risk criteria below to this card.
 - risk: ok, watch, or likely_ban, and a confidence between 0 and 1.
+
+Risk criteria, for the {format} format:
+- likely_ban: the card is far stronger than anything at its cost among the comparable cards, or it
+  enables a cheap, fast combo that wins the game or makes infinite resources, or it is a near copy
+  of a card that is banned in {format}. Banned cards in this format are usually like that.
+- watch: the card is a known piece of a combo that needs several specific cards, or it is at the
+  top of the power curve for its cost but has a real drawback or a clear answer.
+- ok: its power is in line with the comparable cards, and it has no dangerous combo you can cite.
+  Most cards are ok. Being efficient, popular or having synergies is not enough for watch:
+  removal, counterspells, card draw and mana creatures at a fair rate are ok.
+Choose watch only when you can name the concrete reason it is not ok, and choose likely_ban
+whenever the card meets a likely_ban criterion, even if you are unsure.
 
 Some card hits are marked (banned in ...). They cannot be played in those formats, so never use
 them as combo pieces there. Use them only as precedents: a card close to a banned card is a warning sign.

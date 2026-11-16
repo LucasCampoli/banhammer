@@ -1,0 +1,18 @@
+# Control for step 4: step 3 (ablation/3_type_mana_filter.yaml) with the judge limited to the
+# first 5 fused cards, without reranking. Compared with ablation/4_rerank_llm.yaml it isolates
+# the effect of the reranker from the effect of a smaller judge context.
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  provider: openai
+  model: text-embedding-3-small
+vector_store:
+  provider: pinecone
+k: 10
+format_filter: true
+decompose: true
+hybrid: true
+type_mana_filter: true   # counterpart queries: type_words $in [type], cmc $lte max mana value
+context_cards: 5    # cards the judge sees, in fused order
