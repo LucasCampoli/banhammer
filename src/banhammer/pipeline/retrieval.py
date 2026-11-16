@@ -25,6 +25,7 @@ def card_filter(
     Args:
         fmt: Keep cards legal or banned in this format.
         card_type: Keep cards with this card type word (``"creature"`` matches ``"Creature"``).
+            With several words only the last one is used (``"Artifact Creature"`` -> ``"Creature"``).
         max_mana_value: Keep cards whose mana value is at most this.
 
     Returns:
@@ -33,8 +34,10 @@ def card_filter(
     clauses: list[dict] = []
     if fmt:
         clauses.append({"formats": {"$in": [fmt]}})
-    if card_type:
-        clauses.append({"type_words": {"$in": [card_type.strip().title()]}})
+    type_words = (card_type or "").split()
+    if type_words:
+        # The LLM may answer "Artifact Creature"; metadata stores one word per type.
+        clauses.append({"type_words": {"$in": [type_words[-1].title()]}})
     if max_mana_value is not None:
         clauses.append({"cmc": {"$lte": float(max_mana_value)}})
     if not clauses:
