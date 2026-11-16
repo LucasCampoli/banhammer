@@ -12,18 +12,22 @@ MAX_COUNTERPARTS = 5
 MAX_RULES_TOPICS = 5
 
 _DECOMPOSE_SYSTEM = """You are a Magic: The Gathering rules and combo expert.
-You are given a newly designed card. Do not judge it; break it down so we can search for what it
-interacts with.
+You are given a newly designed card. Do not judge it; break it down so we can search a card
+database for the OTHER half of a combo: the existing cards it combos with.
 
 - abilities: split every ability into trigger, cost, effect and restrictions. Leave a field empty
   when the ability has none.
-- counterparts: up to 5 mechanical counterparts. Each one describes, as English Oracle rules text,
-  the OTHER half of a combo: an existing card that would turn this card into an infinite loop, a
-  lock or a degenerate engine. Do not describe cards that do the same thing as this card.
-  Example: if the card triggers whenever an opponent draws a card, a counterpart is
-  "At the beginning of each player's upkeep, that player draws a card." or
-  "Each opponent draws a card."
-  Give the counterpart's card type and a maximum mana value when the combo needs them.
+- counterparts: up to 5 different cards that would complete a combo with this card (an infinite
+  loop, a lock, or a fast win). First ask what this card needs that it does not provide itself
+  (an untap effect, a sacrifice outlet, a way to remove counters, a free recursion target, a
+  payoff for a resource it makes...). Then write each counterpart as the Oracle text of a
+  realistic card that provides it: a creature with an enters trigger, an instant, an artifact,
+  a land with an activated ability, whatever such a card would normally be.
+  Never repeat this card's own effect, never mention this card by name, and do not describe a
+  rules change that no single card would print.
+  card_type: the type such a card would most likely have. Most combo pieces are creatures,
+  artifacts, instants or lands; use null when you are not sure.
+  max_mana_value: null unless the combo clearly fails above some cost.
 - rules_topics: up to 5 Comprehensive Rules topics the card's wording depends on, such as
   keywords, token types, timing restrictions or replacement effects."""
 
