@@ -2,14 +2,10 @@
 # first 5 fused cards, without reranking. Compared with ablation/4_rerank_llm.yaml it isolates
 # the effect of the reranker from the effect of a smaller judge context.
 llm:
-  provider: openai
   model: gpt-4o-mini
   temperature: 0
 embeddings:
-  provider: openai
   model: text-embedding-3-small
-vector_store:
-  provider: pinecone
 k: 10
 format_filter: true
 decompose: true
