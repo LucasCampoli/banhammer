@@ -39,3 +39,12 @@ def test_embedding_tokens_and_cost():
     assert tokens > 0
     assert embedding_cost(1_000_000, "text-embedding-3-small") == pytest.approx(0.02)
     assert embedding_cost(tokens, "unknown") is None
+
+
+def test_get_llm_passes_only_the_params_the_config_sets(monkeypatch):
+    from banhammer.providers.llm import get_llm
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    assert get_llm({"model": "gpt-4o-mini", "temperature": 0}).temperature == 0
+    reasoning = get_llm({"model": "gpt-5.4-mini", "reasoning_effort": "low"})
+    assert reasoning.temperature is None and reasoning.reasoning_effort == "low"

@@ -16,6 +16,7 @@ import tiktoken
 PRICES: dict[str, tuple[float, float, float]] = {
     "gpt-4o-mini": (0.15, 0.075, 0.60),
     "gpt-4o": (2.50, 1.25, 10.00),
+    "gpt-5.4-mini": (0.75, 0.075, 4.50),  # output includes hidden reasoning tokens
     "text-embedding-3-small": (0.02, 0.02, 0.0),
     "text-embedding-3-large": (0.13, 0.13, 0.0),
 }
