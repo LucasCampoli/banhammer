@@ -44,8 +44,8 @@ def score_card(graph, row: dict, embedding_model: str) -> dict:
     cost = run_cost(usage.usage_metadata, result.get("queries") or [], embedding_model)
     # Final card order, after fusion and reranking; recall@25 covers the reranker's candidates.
     hits = [hit if isinstance(hit, Hit) else Hit.model_validate(hit) for hit in result.get("hits") or []]
-    report = result["report"]
-    if not isinstance(report, BalanceReport):
+    report = result.get("report")
+    if report is not None and not isinstance(report, BalanceReport):
         report = BalanceReport.model_validate(report)
     pieces = row.get("combo_pieces") or []
     expected = row["expected_risk"]
@@ -53,26 +53,31 @@ def score_card(graph, row: dict, embedding_model: str) -> dict:
         "card": card.name,
         "format": fmt,
         "expected_risk": expected,
-        "risk": report.risk,
-        "risk_match": risk_matches(report, expected),
-        "false_alarm": false_alarm(report, expected),
+        "risk": None if report is None else report.risk,
+        "risk_match": None if report is None else risk_matches(report, expected),
+        "false_alarm": None if report is None else false_alarm(report, expected),
         "recall@5": recall_at_k(hits, pieces, 5) if pieces else None,
         "recall@10": recall_at_k(hits, pieces, 10) if pieces else None,
         "recall@25": recall_at_k(hits, pieces, 25) if pieces else None,
         "dropped_claims": result.get("dropped_claims", 0),
         **cost,
         "retrieved_cards": card_names(hits)[:10],
-        "report": report.model_dump(),
+        "report": None if report is None else report.model_dump(),
     }
 
 
-def score_config(config_path: Path, gold_path: Path, out_dir: Path) -> dict:
-    graph = build_graph(config_path)
+def score_config(config_path: Path, gold_path: Path, out_dir: Path, retrieval_only: bool = False) -> dict:
+    """Score every gold card. `retrieval_only` skips the judge and the cards without combo pieces."""
+    graph = build_graph(config_path, judge_report=not retrieval_only)
     embedding_model = load_yaml(config_path)["embeddings"].get("model") or "text-embedding-3-small"
+    rows = load_gold(gold_path)
+    if retrieval_only:
+        rows = [row for row in rows if row.get("combo_pieces")]
     cards = []
-    for row in load_gold(gold_path):
+    for row in rows:
         cards.append(score_card(graph, row, embedding_model))
-        print(f"{config_path.stem}: {cards[-1]['card']} -> {cards[-1]['risk']} (${_usd(cards[-1]['cost_usd'])})")
+        outcome = cards[-1]['risk'] or f"recall@25 {cards[-1]['recall@25']:.2f}"
+        print(f"{config_path.stem}: {cards[-1]['card']} -> {outcome} (${_usd(cards[-1]['cost_usd'])})")
     costs = [c["cost_usd"] for c in cards]
     summary = {
         "config": config_path.stem,
@@ -89,7 +94,8 @@ def score_config(config_path: Path, gold_path: Path, out_dir: Path) -> dict:
         "cards": len(cards),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{config_path.stem}.json"
+    suffix = "-retrieval" if retrieval_only else ""
+    out_path = out_dir / f"{config_path.stem}{suffix}.json"
     out_path.write_text(json.dumps({"summary": summary, "cards": cards}, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
     print(f"Wrote {out_path}")
@@ -132,9 +138,11 @@ def main() -> None:
     parser.add_argument("--configs", nargs="+", type=Path, required=True)
     parser.add_argument("--gold", type=Path, default=ROOT / "data" / "eval" / "gold.jsonl")
     parser.add_argument("--out", type=Path, default=ROOT / "outputs" / "eval")
+    parser.add_argument("--retrieval-only", action="store_true",
+                        help="skip the judge and the cards without combo pieces; only recall is scored")
     args = parser.parse_args()
     load_env()
-    render_table([score_config(path, args.gold, args.out) for path in args.configs])
+    render_table([score_config(path, args.gold, args.out, args.retrieval_only) for path in args.configs])
 
 
 if __name__ == "__main__":

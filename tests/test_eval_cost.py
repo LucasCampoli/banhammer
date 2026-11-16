@@ -48,3 +48,34 @@ def test_get_llm_passes_only_the_params_the_config_sets(monkeypatch):
     assert get_llm({"model": "gpt-4o-mini", "temperature": 0}).temperature == 0
     reasoning = get_llm({"model": "gpt-5.4-mini", "reasoning_effort": "low"})
     assert reasoning.temperature is None and reasoning.reasoning_effort == "low"
+
+
+def test_retrieval_only_scores_combo_cards_without_a_judge(tmp_path, monkeypatch):
+    import json
+
+    from banhammer.eval import __main__ as eval_main
+    from banhammer.models import Hit
+
+    built = {}
+
+    class Graph:
+        def invoke(self, state):
+            hit = Hit(id="1", namespace="cards", text="t", metadata={"name": "Pestermite"}, source="dense")
+            return {"hits": [hit], "queries": []}
+
+    def fake_build_graph(config, judge_report=True):
+        built["judge_report"] = judge_report
+        return Graph()
+
+    monkeypatch.setattr(eval_main, "build_graph", fake_build_graph)
+    config = tmp_path / "cfg.yaml"
+    config.write_text("embeddings:\n  model: text-embedding-3-small\n", encoding="utf-8")
+    gold = tmp_path / "gold.jsonl"
+    rows = [{"card": {"name": "Twin"}, "combo_pieces": ["Pestermite", "Deceiver Exarch"], "expected_risk": "watch"},
+            {"card": {"name": "Bolt"}, "combo_pieces": [], "expected_risk": "ok"}]
+    gold.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    summary = eval_main.score_config(config, gold, tmp_path, retrieval_only=True)
+    assert built["judge_report"] is False
+    assert summary["cards"] == 1 and summary["recall@5"] == 0.5 and summary["risk_accuracy"] is None
+    assert (tmp_path / "cfg-retrieval.json").exists()

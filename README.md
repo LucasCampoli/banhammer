@@ -36,6 +36,7 @@ python -m banhammer.index                   # embed data/processed into Pinecone
 python -m banhammer evaluate path/to/card.json --format modern   # or standard
 python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml
 python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml configs/ablation/*.yaml   # full ablation
+python -m banhammer.eval --configs configs/ablation/7_decompose_gpt5_mini.yaml --retrieval-only   # recall only, no judge
 python -m banhammer evaluate path/to/card.json --format modern --config configs/ablation/4_rerank_llm.yaml
 
 python scripts/download_tessdata.py         # tessdata_best model into data/tessdata/

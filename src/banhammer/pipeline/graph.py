@@ -190,7 +190,8 @@ def _processed_dir(cfg: dict) -> Path:
     return path if path.is_absolute() else ROOT / path
 
 
-def build_graph(config: dict | Path | str):
+def build_graph(config: dict | Path | str, judge_report: bool = True):
+    """The pipeline for one card. Without `judge_report` it stops after reranking (no report), to measure retrieval alone."""
     load_env()
     cfg = config if isinstance(config, dict) else load_yaml(config)
     embeddings = get_embeddings(cfg["embeddings"])
@@ -248,11 +249,15 @@ def build_graph(config: dict | Path | str):
     graph.add_node("retrieve", retrieve)
     graph.add_node("exclude_self", drop_self)
     graph.add_node("rerank", rerank)
-    graph.add_node("generate", generate)
+    if judge_report:
+        graph.add_node("generate", generate)
     graph.add_edge(START, "build_queries")
     graph.add_edge("build_queries", "retrieve")
     graph.add_edge("retrieve", "exclude_self")
     graph.add_edge("exclude_self", "rerank")
-    graph.add_edge("rerank", "generate")
-    graph.add_edge("generate", END)
+    if judge_report:
+        graph.add_edge("rerank", "generate")
+        graph.add_edge("generate", END)
+    else:
+        graph.add_edge("rerank", END)
     return graph.compile()

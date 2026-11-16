@@ -70,7 +70,7 @@ class _FakeStore:
         return [(_Doc(f"{prefix}{i}", f"{prefix}{i}"), 1.0 - i / 10) for i in range(1, 4)]
 
 
-def _run_graph(monkeypatch, cfg, llm, llm_for=None):
+def _run_graph(monkeypatch, cfg, llm, llm_for=None, judge_report=True):
     from banhammer.pipeline import graph as graph_module
 
     calls = []
@@ -88,7 +88,7 @@ def _run_graph(monkeypatch, cfg, llm, llm_for=None):
     monkeypatch.setattr(graph_module, "get_llm", llm_for or (lambda cfg: llm))
     monkeypatch.setattr(graph_module, "StoreFactory", Stores)
     base = {"llm": {}, "embeddings": {}, "k": 3}
-    result = graph_module.build_graph({**base, **cfg}).invoke({"card": CARD, "format": "standard"})
+    result = graph_module.build_graph({**base, **cfg}, judge_report).invoke({"card": CARD, "format": "standard"})
     return calls, result
 
 
@@ -143,3 +143,10 @@ def test_decompose_llm_writes_queries_and_llm_judges(monkeypatch):
     assert decompose_llm.schema is CardAnalysis
     assert judge_llm.schema is BalanceReport
     assert ("cards", "Untap target permanent.", {"formats": {"$in": ["standard"]}}) in calls
+
+
+def test_graph_without_judge_returns_hits_and_no_report(monkeypatch):
+    llm = FakeLLM(None)
+    _, result = _run_graph(monkeypatch, {}, llm, judge_report=False)
+    assert _ids(result["hits"]) == ["c1", "c2", "c3", "r1", "r2", "r3"]
+    assert "report" not in result and llm.messages is None
