@@ -12,9 +12,10 @@ Todo se hizo con `gpt-4o-mini` y `text-embedding-3-small`, y con un presupuesto 
 2. **No todos los bans se pueden deducir del texto.** Muchas cartas se banean por cómo dominaron los torneos (metagame), no por lo que dicen. Las separamos de la métrica principal.
 3. **El juez es muy ruidoso.** Con tres corridas idénticas, 14 de 37 cartas cambiaron de veredicto. Toda comparación de una sola corrida necesita una regla de decisión fijada de antemano.
 4. **Calibrar el prompt del juez rindió más que cualquier mejora de la búsqueda**, y costó prácticamente nada.
-5. **El RAG sí mejora el veredicto, pero el RAG más simple fue el mejor.** El juez sin búsqueda queda al nivel del azar (0,52); con una búsqueda simple sube a 0,76; con la búsqueda más elaborada, a 0,60.
+5. **El RAG mejora poco el veredicto, y el RAG más simple fue el mejor.** El juez sin búsqueda queda al nivel del azar (0,52). Con una búsqueda simple, la primera corrida dio 0,76, pero al repetirla dio 0,57 y 0,60: el promedio es 0,64, y la mejora (0,12) queda por debajo del umbral. Las búsquedas elaboradas dieron entre 0,48 y 0,60.
 6. **El contexto del juez estaba mal armado.** Una sola lista obligaba a elegir entre cartas comparables y candidatas a combo, y le llegaban unas 60 reglas, casi todas irrelevantes. Esto llevó a los dos últimos cambios.
-7. **Arreglar el contexto no alcanzó, porque el problema está antes.** Los dos cambios empataron o empeoraron. La búsqueda casi nunca encuentra la pieza del combo (recall@10 cerca de 0), así que ordenar mejor lo que llega al juez no sirve.
+7. **Arreglar el contexto no alcanzó.** Los dos cambios empataron o empeoraron. La búsqueda casi nunca encuentra la pieza del combo (recall@10 cerca de 0).
+8. **Pero aunque la búsqueda fuera perfecta, el juez no mejoraría.** Le dimos al juez las piezas correctas del gold set: las nombró en el 72 % de los casos, pero el acierto fue 0,58, igual que sin ellas. Ve el combo, pero no sabe distinguir un combo que merece ban de uno legal. **El límite hoy es el juez, no la búsqueda.**
 
 ## 1. Sobre cómo medir
 
@@ -98,7 +99,7 @@ Conclusión: **una diferencia de menos de unas 3 cartas entre dos configs corrid
 | `naive` | **0,76** | **5 / 9** | 1 / 23 |
 | `4_rerank_llm` | 0,60 | 3 / 9 | 3 / 23 |
 
-Sin búsqueda, el juez queda al nivel del azar. Con una búsqueda simple supera por 0,24 el promedio de `no_rag`, por encima del umbral fijado.
+Sin búsqueda, el juez queda al nivel del azar. Con una búsqueda simple superó por 0,24 el promedio de `no_rag`, por encima del umbral fijado. **Pero al repetir `naive` dos veces más dio 0,57 y 0,60** (ver sección 5): con el promedio de tres corridas, 0,64, la mejora es de 0,12 y no llega al umbral.
 
 Hay un matiz: el prompt le pide al juez comparar contra las cartas recuperadas y citar todo lo que afirma. Sin resultados no tiene con qué comparar ni qué citar, y casi nunca se anima a `likely_ban`. Lo que esto muestra es que **este juez necesita contexto para animarse a banear**, no que el modelo no sepa reconocer una carta rota. Una línea base del "LLM solo" justa usaría un prompt sin exigencia de citas.
 
@@ -185,14 +186,30 @@ Una corrida de cada config (la segunda se canceló para cuidar el presupuesto). 
 - **Separar comparables y candidatas a combo no mejoró el veredicto.** La config 8 marca menos legales como ban que la 4 (1 contra 3), pero detecta un ban menos. Es un empate.
 - **Recortar las reglas cambió hacia dónde se equivoca el juez, no cuánto acierta.** Con 10 reglas en vez de ~60, el juez lee la mitad de tokens y banea más, pero las cartas equivocadas. Detecta los mismos 2 bans por texto (Dark Depths y Mycosynth Lattice) y marca 6 legales como ban: Lightning Bolt, Birds of Paradise, Splinter Twin, Devoted Druid, Exquisite Blood y Mikaeus. Las reglas no eran lo que frenaba la detección.
 - **La búsqueda sigue sin encontrar las piezas** (recall@10 entre 0,03 y 0,05). Todas las configs elaboradas parten de la idea "encontrar la contraparte para que el juez vea el combo", y ese primer paso no funciona. Al juez le llegan candidatas que no hacen combo, y eso lo confunde en una dirección u otra.
-- **`naive` sigue siendo la mejor, pero tampoco se repitió.** Su 0,76 es una sola corrida y el ruido medido es ~0,12. No encuentra ninguna pieza: su ventaja viene de darle al juez poco contexto y dejarlo razonar sobre el texto de la carta.
+### `naive` repetida y la prueba con las piezas correctas
 
-**Conclusión:** el cuello de botella es la búsqueda de contrapartes, no el armado del contexto. Mientras el recall sea casi 0, cambiar qué ve el juez solo mueve el error de lugar.
+Para saber si el 0,76 de `naive` era real y si arreglar la búsqueda valía la pena, corrimos `naive` dos veces más y una config nueva, `oracle_pieces`. Es `naive` más las piezas de combo del gold set (la primera carta de cada rol), entregadas al juez como candidatas a combo, como si la búsqueda fuera perfecta. Detalle en `outputs/eval-v6/`.
+
+| Config | Acierto baneada / no baneada | Bans por texto | Legales marcadas como ban | Piezas nombradas | US$ |
+| --- | --- | --- | --- | --- | --- |
+| `naive`, corrida 1 | 0,76 | 5 / 9 | 1 / 23 | 0,00 | 0,020 |
+| `naive`, corrida 2 | 0,57 | 2 / 9 | 2 / 23 | 0,00 | 0,017 |
+| `naive`, corrida 3 | 0,60 | 3 / 9 | 3 / 23 | 0,00 | 0,015 |
+| **`naive`, promedio** | **0,64** | | | | |
+| `oracle_pieces` | 0,58 | 3 / 9 | 4 / 23 | 0,72 | 0,020 |
+
+- **El 0,76 de `naive` fue en parte suerte.** El promedio de tres corridas es 0,64. Contra `no_rag` (0,52) la diferencia es 0,12, por debajo del umbral de 0,15: con este gold set **no se puede afirmar que el RAG mejore el veredicto**. Todas las configs con búsqueda quedan entre 0,48 y 0,64, dentro del ruido.
+- **Con las piezas correctas, el juez ve el combo pero no lo juzga bien.** Nombra las piezas en el 72 % de los casos (sin ellas, 0 %), así que las lee y las usa. Pero el acierto no sube:
+  - Detecta Punishing Fire y Dark Depths, que con la búsqueda real casi nunca detecta.
+  - Deja en `watch` a Hogaak, Nadu y Mycosynth Lattice, aun con su pieza delante.
+  - Banea Thopter Foundry e Isochron Scepter, combos legales, justamente porque ahora ve su combo.
+- **Lo que separa un combo baneado de uno legal no está en el texto.** Dark Depths + Thespian's Stage y Thopter Foundry + Sword of the Meek son, leídos, combos de dos cartas parecidos. Que uno esté baneado y el otro no depende de cuán rápido y consistente es en la práctica y de qué otros mazos hay, información que el juez no tiene. Nuestra separación entre ban "por texto" y "por metagame" era más borrosa de lo que creíamos.
+
+**Conclusión:** el cuello de botella no es la búsqueda ni el armado del contexto, sino la decisión del juez. Mejorar el recall haría que el juez nombre los combos en el reporte (lo que sí le sirve al usuario), pero no que acierte más el veredicto.
 
 ## 6. Lo que queda abierto
 
-- **Repetir `naive`** para saber si su 0,76 es real (US$0,02 por corrida).
-- **Una cota superior con las piezas correctas:** darle al juez las piezas del gold set en vez de las recuperadas. Si así acierta mucho más, vale la pena arreglar la búsqueda; si no, el límite es el juez.
+- **Un juez más capaz** (otro modelo, o pocos ejemplos de combos baneados y legales en el prompt), medido primero con `oracle_pieces` porque aísla la decisión del juez.
 - **Medir la memorización:** preguntarle al modelo qué carta es cada texto anonimizado. Cuesta menos de un centavo.
 - **Una línea base justa del LLM solo**, con un prompt sin exigencia de citas.
 - **Alinear el criterio de combos del prompt con las etiquetas** (Kiki-Jiki: ¿`watch` o `likely_ban`?).
