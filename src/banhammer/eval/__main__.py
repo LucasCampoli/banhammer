@@ -64,7 +64,7 @@ def verdict_scores(row: dict, report: BalanceReport | None) -> dict:
     }
 
 
-def score_card(graph, row: dict, embedding_model: str, anonymized: bool = True) -> dict:
+def score_card(graph, row: dict, embedding_model: str, anonymized: bool = True, retrieves: bool = True) -> dict:
     """Run one gold card. `anonymized` sends it as \"Test Card\" so the judge cannot recall it by name."""
     original = CardInput.model_validate(row["card"])
     card = anonymize(original) if anonymized else original
@@ -77,7 +77,8 @@ def score_card(graph, row: dict, embedding_model: str, anonymized: bool = True) 
     report = result.get("report")
     if report is not None and not isinstance(report, BalanceReport):
         report = BalanceReport.model_validate(report)
-    pieces = row.get("combo_pieces") or []
+    # Without retrieval (retrieve: false) recall is undefined, not zero.
+    pieces = (row.get("combo_pieces") or []) if retrieves else []
     return {
         "card": original.name,
         "format": fmt,
@@ -177,13 +178,14 @@ def score_config(config_path: Path, gold_path: Path, out_dir: Path, retrieval_on
                  anonymized: bool = True) -> dict:
     """Score every gold card. `retrieval_only` skips the judge and the cards without combo pieces."""
     graph = build_graph(config_path, judge_report=not retrieval_only)
-    embedding_model = load_yaml(config_path)["embeddings"].get("model") or "text-embedding-3-small"
+    cfg = load_yaml(config_path)
+    embedding_model = cfg["embeddings"].get("model") or "text-embedding-3-small"
     rows = load_gold(gold_path)
     if retrieval_only:
         rows = [row for row in rows if row.get("combo_pieces")]
     cards = []
     for row in rows:
-        cards.append(score_card(graph, row, embedding_model, anonymized))
+        cards.append(score_card(graph, row, embedding_model, anonymized, cfg.get("retrieve", True)))
         outcome = cards[-1]['risk'] or f"recall@25 {cards[-1]['recall@25']:.2f}"
         print(f"{config_path.stem}: {cards[-1]['card']} -> {outcome} (${_usd(cards[-1]['cost_usd'])})")
     summary = summarize(config_path.stem, anonymized, cards)
