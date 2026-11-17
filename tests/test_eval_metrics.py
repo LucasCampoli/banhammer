@@ -66,3 +66,18 @@ def test_exclude_self_drops_an_anonymized_card_by_oracle_id():
     hits = [Hit(id="twin-id", namespace="cards", text="t", metadata={"name": "Splinter Twin"}, source="dense"),
             *_hits("Pestermite")]
     assert [hit.id for hit in exclude_self(card, hits)] == ["Pestermite"]
+
+
+def test_oracle_hits_take_the_first_card_of_each_role():
+    import pytest
+
+    from banhammer.eval.__main__ import oracle_hits
+    from banhammer.models import Hit
+
+    catalog = {name: Hit(id=name, namespace="cards", text=name, source="oracle", purpose="combo")
+               for name in ("Vampire Hexmage", "Pestermite")}
+    row = {"card": {"name": "Dark Depths"}, "combo_pieces": ["Vampire Hexmage", ["Pestermite", "Deceiver Exarch"]]}
+    assert [hit.id for hit in oracle_hits(row, catalog)] == ["Vampire Hexmage", "Pestermite"]
+    assert oracle_hits({"card": {"name": "Opt"}}, catalog) == []
+    with pytest.raises(KeyError):
+        oracle_hits({"card": {"name": "X"}, "combo_pieces": ["Missing Card"]}, catalog)

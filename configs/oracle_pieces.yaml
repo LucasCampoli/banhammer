@@ -1,0 +1,10 @@
+# Upper bound for combo retrieval: naive, plus the gold set's known combo pieces handed to the
+# judge as combo candidates (the first card of each role). Only meaningful in the eval.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: false
+oracle_pieces: true

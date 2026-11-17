@@ -12,5 +12,6 @@ class PipelineState(TypedDict, total=False):
     analysis: CardAnalysis | None  # decomposition behind the expanded queries (decompose: true)
     queries: list[Query]
     hits: list[Hit]
+    oracle_hits: list[Hit]    # known combo pieces handed to the judge as if retrieved (eval upper bound)
     report: BalanceReport
     dropped_claims: int       # claims removed from the report for lacking a valid citation

@@ -13,7 +13,8 @@ returns, so the reranker can see a wider pool than the rules queries. `decompose
 With `split_context: true` the cards similar to the evaluated one and the combo candidates found by
 the counterpart queries stay apart: they are fused separately, only the candidates are reranked,
 and the judge sees the first `context_cards` of each in its own block. `context_rules` caps the rule
-hits the judge sees, in fused order (all of them by default).
+hits the judge sees, in fused order (all of them by default). `oracle_hits` in the input state go to the
+judge as combo candidates, untouched by retrieval: the eval uses them to give it the known combo pieces.
 """
 from __future__ import annotations
 
@@ -298,7 +299,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
         return {"hits": rerank_cards(hits, reorder, candidates)}
 
     def generate(state: PipelineState) -> dict:
-        hits = judge_context(state.get("hits") or [], context_cards, context_rules)
+        hits = (state.get("oracle_hits") or []) + judge_context(state.get("hits") or [], context_cards, context_rules)
         report, dropped = judge(llm, state["card"], hits, state.get("format") or "modern")
         return {"report": report, "dropped_claims": dropped}
 

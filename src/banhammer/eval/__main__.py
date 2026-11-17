@@ -16,6 +16,7 @@ from banhammer.eval.metrics import (balanced_accuracy, ban_detected, card_names,
                                      ordinal_error, pieces_named, recall_at_k, risk_matches, wilson_interval)
 from banhammer.models import BalanceReport, CardInput, Hit, Query
 from banhammer.pipeline import build_graph
+from banhammer.shared.documents import read_jsonl
 
 
 def load_gold(path: Path) -> list[dict]:
@@ -64,13 +65,34 @@ def verdict_scores(row: dict, report: BalanceReport | None) -> dict:
     }
 
 
-def score_card(graph, row: dict, embedding_model: str, anonymized: bool = True, retrieves: bool = True) -> dict:
-    """Run one gold card. `anonymized` sends it as \"Test Card\" so the judge cannot recall it by name."""
+def oracle_hits(row: dict, catalog: dict[str, Hit]) -> list[Hit]:
+    """The gold combo pieces as combo-candidate hits: the first card of each role."""
+    names = [piece[0] if isinstance(piece, list) else piece for piece in row.get("combo_pieces") or []]
+    missing = [name for name in names if name not in catalog]
+    if missing:
+        raise KeyError(f"combo pieces of {row['card']['name']} not in the catalog: {', '.join(missing)}")
+    return [catalog[name] for name in names]
+
+
+def load_catalog(path: Path) -> dict[str, Hit]:
+    """Every catalog card as a hit, by name, to hand the judge known pieces."""
+    return {doc.metadata["name"]: Hit(id=str(doc.id), namespace="cards", text=doc.page_content,
+                                      metadata=doc.metadata, source="oracle", purpose="combo")
+            for doc in read_jsonl(path)}
+
+
+def score_card(graph, row: dict, embedding_model: str, anonymized: bool = True, retrieves: bool = True,
+               catalog: dict[str, Hit] | None = None) -> dict:
+    """Run one gold card. `anonymized` sends it as \"Test Card\" so the judge cannot recall it by name.
+
+    With a `catalog`, the gold combo pieces reach the judge as if retrieved (the oracle upper bound).
+    """
     original = CardInput.model_validate(row["card"])
     card = anonymize(original) if anonymized else original
     fmt = row.get("format", "modern")
     with get_usage_metadata_callback() as usage:
-        result = graph.invoke({"card": card, "format": fmt, "queries": [], "hits": []})
+        oracle = oracle_hits(row, catalog) if catalog is not None else []
+        result = graph.invoke({"card": card, "format": fmt, "queries": [], "hits": [], "oracle_hits": oracle})
     cost = run_cost(usage.usage_metadata, result.get("queries") or [], embedding_model)
     # Final card order, after fusion and reranking; recall@25 covers the reranker's candidates.
     hits = [hit if isinstance(hit, Hit) else Hit.model_validate(hit) for hit in result.get("hits") or []]
@@ -183,9 +205,11 @@ def score_config(config_path: Path, gold_path: Path, out_dir: Path, retrieval_on
     rows = load_gold(gold_path)
     if retrieval_only:
         rows = [row for row in rows if row.get("combo_pieces")]
+    catalog = load_catalog(ROOT / cfg.get("processed_dir", "data/processed") / "cards.jsonl") \
+        if cfg.get("oracle_pieces") else None
     cards = []
     for row in rows:
-        cards.append(score_card(graph, row, embedding_model, anonymized, cfg.get("retrieve", True)))
+        cards.append(score_card(graph, row, embedding_model, anonymized, cfg.get("retrieve", True), catalog))
         outcome = cards[-1]['risk'] or f"recall@25 {cards[-1]['recall@25']:.2f}"
         print(f"{config_path.stem}: {cards[-1]['card']} -> {outcome} (${_usd(cards[-1]['cost_usd'])})")
     summary = summarize(config_path.stem, anonymized, cards)
