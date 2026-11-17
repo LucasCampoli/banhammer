@@ -42,11 +42,38 @@ def ban_detected(report: BalanceReport, expected: str) -> bool | None:
     return report.risk == "likely_ban"
 
 
-def severe_false_alarm(report: BalanceReport, expected: str) -> bool | None:
-    """A card that should be `ok` but was called `likely_ban`. None when the card is not expected to be ok."""
-    if expected != "ok":
+RISK_LEVELS = ("ok", "watch", "likely_ban")
+
+
+def false_ban(report: BalanceReport, expected: str) -> bool | None:
+    """A legal card (expected `ok` or `watch`) called `likely_ban`. None when the card is expected banned."""
+    if expected == "likely_ban":
         return None
     return report.risk == "likely_ban"
+
+
+def ordinal_error(report: BalanceReport, expected: str) -> int:
+    """Steps between the verdict and the expected level: `watch` for `ok` is 1, `likely_ban` for `ok` is 2."""
+    return abs(RISK_LEVELS.index(report.risk) - RISK_LEVELS.index(expected))
+
+
+def pieces_named(report: BalanceReport, pieces: list[str | list[str]]) -> float:
+    """Fraction of combo roles whose card the report names in one of its combos.
+
+    Recall only says the search found a piece; this says the piece reached the user.
+    """
+    if not pieces:
+        raise ValueError("pieces_named is undefined when there are no combo pieces")
+    text = " ".join(f"{combo.description} {' '.join(combo.sequence)}" for combo in report.combos).casefold()
+    roles = [[piece] if isinstance(piece, str) else piece for piece in pieces]
+    return sum(any(name.casefold() in text for name in role) for role in roles) / len(roles)
+
+
+def balanced_accuracy(detection: float | None, false_ban_rate: float | None) -> float | None:
+    """Mean of the bans caught and the legal cards left unbanned. Any constant answer scores 0.5."""
+    if detection is None or false_ban_rate is None:
+        return None
+    return (detection + 1 - false_ban_rate) / 2
 
 
 WILSON_Z = 1.96  # 95% confidence

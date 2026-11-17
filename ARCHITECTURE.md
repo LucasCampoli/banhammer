@@ -129,8 +129,12 @@ The gold set has 37 cards, each with the format it is audited against, its known
 Metrics:
 
 - **recall@5, recall@10 and recall@25**: fraction of the known combo pieces among the first 5, 10 or 25 card hits (cards with combo pieces only), measured on the final card order after fusion and reranking. recall@25 is the coverage of the reranker's candidates before the cut to 5. With a single catalog query (`naive`, `pipeline`) only `k` = 10 cards come back, so recall@25 equals recall@10.
-- **risk_accuracy**: how often `risk` matches the expected level.
-- **false_alarm_rate**: among the cards expected `ok`, how often the report says `watch` or `likely_ban`.
+- **ban/legal balanced accuracy** (headline): the verdict read as banned (`likely_ban`) or not. It is the mean of the bans caught among the cards with `ban_reason: text` and of the legal cards (`ok` or `watch`) not called `likely_ban`. Any constant answer scores 0.5, so that is the baseline. `watch` is a judgement call of the gold set, not a fact, so it does not count against the headline.
+- **text bans caught** and **legal→ban**: the two halves of the headline, as counts with their 95% Wilson interval. With 5 text bans the interval is wide: read it before comparing configs.
+- **meta bans caught**: bans for metagame reasons (`ban_reason: meta`, every Standard ban included). They depend on what else the format plays, not on the card's text, so they are reported apart.
+- **ordinal error**: mean steps between verdict and expected level (`watch` for `ok` is 1, `likely_ban` for `ok` is 2).
+- **pieces named**: fraction of combo pieces named in the report's combos, that is, pieces that reached the user and not only the search.
+- **risk_accuracy** and **false_alarm_rate** (`ok` cards called `watch` or `likely_ban`) stay in the JSON summary.
 - **dropped_per_card**: claims discarded per card for lacking a valid citation, a measure of ungrounded output.
 
 A second table reports the cost of each config: chat tokens in and out per card, and dollars per card and in total (`banhammer/eval/cost.py`). Chat usage comes from LangChain's usage callback around each graph run, so it covers the decomposition, the LLM reranker and the judge; OpenAI's cached input tokens are billed at the cached price. Embedding calls report no usage, so the query embeddings are counted with tiktoken. Prices are the OpenAI list prices in `PRICES`; a model missing there gives a cost of `n/a`. Each card's JSON also keeps `input_tokens`, `cached_tokens`, `output_tokens`, `embedding_tokens` and `cost_usd`.

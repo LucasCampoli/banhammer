@@ -1,5 +1,6 @@
 from banhammer.eval.anonymize import ANONYMOUS_NAME, anonymize
-from banhammer.eval.metrics import ban_detected, recall_at_k, severe_false_alarm, wilson_interval
+from banhammer.eval.metrics import (balanced_accuracy, ban_detected, false_ban, ordinal_error, pieces_named,
+                                     recall_at_k, wilson_interval)
 from banhammer.models import BalanceReport, CardInput, Hit
 from banhammer.pipeline.graph import exclude_self
 
@@ -20,8 +21,25 @@ def test_ban_metrics_only_score_their_group():
     watched = BalanceReport(risk="watch", confidence=1)
     assert ban_detected(banned, "likely_ban") is True and ban_detected(watched, "likely_ban") is False
     assert ban_detected(banned, "ok") is None
-    assert severe_false_alarm(banned, "ok") is True and severe_false_alarm(watched, "ok") is False
-    assert severe_false_alarm(banned, "watch") is None
+    assert false_ban(banned, "ok") is True and false_ban(banned, "watch") is True
+    assert false_ban(watched, "ok") is False and false_ban(banned, "likely_ban") is None
+
+
+def test_ordinal_error_counts_steps_between_levels():
+    assert ordinal_error(BalanceReport(risk="likely_ban", confidence=1), "ok") == 2
+    assert ordinal_error(BalanceReport(risk="watch", confidence=1), "likely_ban") == 1
+
+
+def test_balanced_accuracy_scores_a_constant_answer_at_one_half():
+    assert balanced_accuracy(1.0, 1.0) == 0.5 and balanced_accuracy(0.0, 0.0) == 0.5
+    assert balanced_accuracy(0.8, 0.1) == 0.85
+    assert balanced_accuracy(None, 0.1) is None
+
+
+def test_pieces_named_reads_the_report_combos():
+    report = BalanceReport(risk="watch", confidence=1, combos=[
+        {"description": "Loops with Sanguine Bond.", "sequence": ["Cast Pestermite."]}])
+    assert pieces_named(report, ["Sanguine Bond", ["Deceiver Exarch", "Pestermite"], "Triskelion"]) == 2 / 3
 
 
 def test_wilson_interval_is_wide_for_a_small_gold_set():
