@@ -138,10 +138,15 @@ class CardInput(BaseModel):
         return format_card(self.name, self.type_line, self.mana_cost, self.oracle_text, faces)
 
 
+# What a catalog search is for: cards similar to the evaluated one, or candidates to combo with it.
+Purpose = Literal["similar", "combo"]
+
+
 class Query(BaseModel):
     text: str
     namespace: Literal["cards", "rules"]
     filter: dict[str, Any] | None = None
+    purpose: Purpose = "similar"
 
 
 class Hit(BaseModel):
@@ -151,6 +156,7 @@ class Hit(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     score: float | None = None
     source: str
+    purpose: Purpose = "similar"
 
 
 class Ability(BaseModel):

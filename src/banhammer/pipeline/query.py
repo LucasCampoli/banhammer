@@ -81,7 +81,7 @@ def expanded_queries(
             flt = card_filter(fmt_or_none, counterpart.card_type, counterpart.max_mana_value)
         else:
             flt = card_filter(fmt_or_none)
-        queries.append(Query(text=counterpart.description, namespace="cards", filter=flt))
+        queries.append(Query(text=counterpart.description, namespace="cards", filter=flt, purpose="combo"))
     return queries
 
 

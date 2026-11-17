@@ -10,6 +10,9 @@ the first `context_cards` of them. `card_k` (default `k`) sets how many cards ea
 returns, so the reranker can see a wider pool than the rules queries. `decompose_llm` (default
 `llm`) sets the model that writes the expanded queries; the reranker and the judge keep `llm`.
 `retrieve: false` sends no queries, so the judge reads the card alone: the baseline without RAG.
+With `split_context: true` the cards similar to the evaluated one and the combo candidates found by
+the counterpart queries stay apart: they are fused separately, only the candidates are reranked,
+and the judge sees the first `context_cards` of each in its own block.
 """
 from __future__ import annotations
 
@@ -55,6 +58,19 @@ them as combo pieces there. Use them only as precedents: a card close to a banne
 
 Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
 Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits."""
+
+_SPLIT_NOTE = """
+
+The card hits come in two blocks. Comparable cards are the existing cards most similar to this
+one: compare its power against them in power_assessment. Combo candidates were searched as
+cards that might complete a combo with it: look for dangerous interactions among them in combos.
+Most candidates will not combo; cite only interactions that really work."""
+
+_BLOCK_TITLES = {
+    "similar": "Comparable cards (compare power against these):",
+    "combo": "Combo candidates (look for dangerous interactions with these):",
+    "rules": "Rules:",
+}
 
 
 def search(stores: StoreFactory, query: Query, k: int) -> list[Hit]:
@@ -110,33 +126,47 @@ def describe(card: CardInput) -> str:
 
 
 def number_hits(hits: list[Hit]) -> tuple[dict[str, str], str]:
-    """Label hits C1, C2, ... and R1, R2, ... Returns label -> hit id, and the prompt block."""
+    """Label hits C1, C2, ... and R1, R2, ... Returns label -> hit id, and the prompt block.
+
+    Cards similar to the evaluated one come first, then combo candidates, then rules. When there
+    are combo candidates every block gets a title, so the judge knows what each card is for.
+    """
+    blocks = {
+        "similar": [hit for hit in hits if hit.namespace == "cards" and hit.purpose == "similar"],
+        "combo": [hit for hit in hits if hit.namespace == "cards" and hit.purpose == "combo"],
+        "rules": [hit for hit in hits if hit.namespace == "rules"],
+    }
+    titled = bool(blocks["combo"])
     labels: dict[str, str] = {}
     lines: list[str] = []
     cards = rules = 0
-    for hit in hits:
-        if hit.namespace == "rules":
-            rules += 1
-            label = f"R{rules}"
-        else:
-            cards += 1
-            label = f"C{cards}"
-        labels[label] = hit.id
-        banned = hit.metadata.get("banned") or []
-        flag = f"(banned in {', '.join(banned)}) " if banned else ""
-        lines.append(f"[{label}] {flag}{hit.text}")
+    for block, block_hits in blocks.items():
+        if titled and block_hits:
+            lines.append(_BLOCK_TITLES[block])
+        for hit in block_hits:
+            if block == "rules":
+                rules += 1
+                label = f"R{rules}"
+            else:
+                cards += 1
+                label = f"C{cards}"
+            labels[label] = hit.id
+            banned = hit.metadata.get("banned") or []
+            flag = f"(banned in {', '.join(banned)}) " if banned else ""
+            lines.append(f"[{label}] {flag}{hit.text}")
     return labels, "\n".join(lines) if lines else "(no hits)"
 
 
 def judge_context(hits: list[Hit], context_cards: int | None) -> list[Hit]:
-    """Every rule hit and the first ``context_cards`` card hits (all of them when None), in order."""
+    """Every rule hit and the first ``context_cards`` card hits of each purpose (all when None), in order."""
     if context_cards is None:
         return hits
-    kept, cards = [], 0
+    kept: list[Hit] = []
+    cards: dict[str, int] = {}
     for hit in hits:
         if hit.namespace == "cards":
-            cards += 1
-            if cards > context_cards:
+            cards[hit.purpose] = cards.get(hit.purpose, 0) + 1
+            if cards[hit.purpose] > context_cards:
                 continue
         kept.append(hit)
     return kept
@@ -178,8 +208,11 @@ def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "mode
     """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits."""
     labels, numbered = number_hits(hits)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
+    system = _SYSTEM.format(format=fmt.title())
+    if any(hit.purpose == "combo" for hit in hits):
+        system += _SPLIT_NOTE
     result = llm.with_structured_output(BalanceReport).invoke([
-        SystemMessage(content=_SYSTEM.format(format=fmt.title())),
+        SystemMessage(content=system),
         HumanMessage(content=prompt),
     ])
     report = result if isinstance(result, BalanceReport) else BalanceReport.model_validate(result)
@@ -214,6 +247,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     candidates = int(cfg.get("candidates", 25))
     context_cards = cfg.get("context_cards")
     context_cards = None if context_cards is None else int(context_cards)
+    split_context = bool(cfg.get("split_context", False))
 
     def make_queries(state: PipelineState) -> dict:
         if not cfg.get("retrieve", True):
@@ -225,9 +259,17 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
         lists: dict[str, list[list[Hit]]] = {}
         for query in state.get("queries") or []:
             query_k = card_k if query.namespace == "cards" else k
-            lists.setdefault(query.namespace, []).append(search(stores, query, query_k))
+            found = search(stores, query, query_k)
             if bm25 is not None and query.namespace == "cards":
-                lists["cards"].append(bm25.search(query, query_k))
+                found = [found, bm25.search(query, query_k)]
+            else:
+                found = [found]
+            key = query.namespace
+            if split_context and query.namespace == "cards":
+                # Similar cards and combo candidates are fused apart, so neither crowds out the other.
+                key = f"cards:{query.purpose}"
+                found = [[hit.model_copy(update={"purpose": query.purpose}) for hit in hits] for hits in found]
+            lists.setdefault(key, []).extend(found)
         return {"hits": fuse_by_namespace(lists)}
 
     def drop_self(state: PipelineState) -> dict:
@@ -243,7 +285,13 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
         else:
             def reorder(hits: list[Hit]) -> list[Hit]:
                 return cross_encoder_rerank(card, hits)
-        return {"hits": rerank_cards(state.get("hits") or [], reorder, candidates)}
+        hits = state.get("hits") or []
+        if split_context:
+            # Only combo candidates are reranked; similar cards keep their similarity order.
+            combo = [hit for hit in hits if hit.purpose == "combo"]
+            return {"hits": rerank_cards(combo, reorder, candidates)
+                    + [hit for hit in hits if hit.purpose != "combo"]}
+        return {"hits": rerank_cards(hits, reorder, candidates)}
 
     def generate(state: PipelineState) -> dict:
         hits = judge_context(state.get("hits") or [], context_cards)

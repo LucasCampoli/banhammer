@@ -1,0 +1,18 @@
+# Ablation step 8: step 4 (ablation/4_rerank_llm.yaml) with two card lists instead of one.
+# The search with the card's own text gives comparable cards (top 5 by similarity, not reranked);
+# the counterpart queries give combo candidates (fused apart, top 25 reranked by the LLM, top 5 kept).
+# The judge sees both, each under its own title: comparables for power, candidates for combos.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: true
+decompose: true
+hybrid: true
+type_mana_filter: true   # counterpart queries: type_words $in [type], cmc $lte max mana value
+rerank: llm
+split_context: true
+candidates: 25      # combo candidates that go to the reranker
+context_cards: 5    # cards of each list the judge sees
