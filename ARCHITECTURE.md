@@ -141,7 +141,7 @@ A second table reports the cost of each config: chat tokens in and out per card,
 
 ## Ablation
 
-Each row adds one technique to the previous one, except row 6, which is an alternative to row 5. Run them all with `python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml configs/ablation/*.yaml`.
+Each row adds one technique to the previous one, except row 6, which is an alternative to row 5. Run them all with `python -m banhammer.eval --configs configs/no_rag.yaml configs/naive.yaml configs/pipeline.yaml configs/ablation/*.yaml`.
 
 | # | Config | Adds |
 | --- | --- | --- |
