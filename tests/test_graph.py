@@ -65,3 +65,9 @@ def test_judge_context_keeps_the_first_cards_of_each_purpose():
     similar = [card_hit(f"s{i}", f"Similar {i}") for i in range(3)]
     kept = judge_context(combos + similar, 2)
     assert [hit.id for hit in kept] == ["c0", "c1", "s0", "s1"]
+
+
+def test_judge_context_caps_the_rules():
+    rules = [Hit(id=f"r{i}", namespace="rules", text="...", source="dense") for i in range(4)]
+    assert [hit.id for hit in judge_context(rules + [card_hit("s", "Opt")], 5, 2)] == ["r0", "r1", "s"]
+    assert len(judge_context(rules, None)) == 4

@@ -12,7 +12,8 @@ returns, so the reranker can see a wider pool than the rules queries. `decompose
 `retrieve: false` sends no queries, so the judge reads the card alone: the baseline without RAG.
 With `split_context: true` the cards similar to the evaluated one and the combo candidates found by
 the counterpart queries stay apart: they are fused separately, only the candidates are reranked,
-and the judge sees the first `context_cards` of each in its own block.
+and the judge sees the first `context_cards` of each in its own block. `context_rules` caps the rule
+hits the judge sees, in fused order (all of them by default).
 """
 from __future__ import annotations
 
@@ -157,18 +158,19 @@ def number_hits(hits: list[Hit]) -> tuple[dict[str, str], str]:
     return labels, "\n".join(lines) if lines else "(no hits)"
 
 
-def judge_context(hits: list[Hit], context_cards: int | None) -> list[Hit]:
-    """Every rule hit and the first ``context_cards`` card hits of each purpose (all when None), in order."""
-    if context_cards is None:
-        return hits
+def judge_context(hits: list[Hit], context_cards: int | None, context_rules: int | None = None) -> list[Hit]:
+    """The first ``context_cards`` card hits of each purpose and the first ``context_rules`` rule hits, in order.
+
+    None keeps every hit of that kind.
+    """
     kept: list[Hit] = []
-    cards: dict[str, int] = {}
+    seen: dict[str, int] = {}
     for hit in hits:
-        if hit.namespace == "cards":
-            cards[hit.purpose] = cards.get(hit.purpose, 0) + 1
-            if cards[hit.purpose] > context_cards:
-                continue
-        kept.append(hit)
+        group = hit.purpose if hit.namespace == "cards" else "rules"
+        limit = context_cards if hit.namespace == "cards" else context_rules
+        seen[group] = seen.get(group, 0) + 1
+        if limit is None or seen[group] <= limit:
+            kept.append(hit)
     return kept
 
 
@@ -248,6 +250,8 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     context_cards = cfg.get("context_cards")
     context_cards = None if context_cards is None else int(context_cards)
     split_context = bool(cfg.get("split_context", False))
+    context_rules = cfg.get("context_rules")
+    context_rules = None if context_rules is None else int(context_rules)
 
     def make_queries(state: PipelineState) -> dict:
         if not cfg.get("retrieve", True):
@@ -294,7 +298,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
         return {"hits": rerank_cards(hits, reorder, candidates)}
 
     def generate(state: PipelineState) -> dict:
-        hits = judge_context(state.get("hits") or [], context_cards)
+        hits = judge_context(state.get("hits") or [], context_cards, context_rules)
         report, dropped = judge(llm, state["card"], hits, state.get("format") or "modern")
         return {"report": report, "dropped_claims": dropped}
 

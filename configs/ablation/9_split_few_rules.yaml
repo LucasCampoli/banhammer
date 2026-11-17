@@ -1,0 +1,21 @@
+# Ablation step 9: step 8 (ablation/8_split_context.yaml) with at most 10 rules for the judge.
+# Decomposition adds rules queries per ability and topic; without a cap the judge reads about 60 rules.
+# Step 8 notes:
+# The search with the card's own text gives comparable cards (top 5 by similarity, not reranked);
+# the counterpart queries give combo candidates (fused apart, top 25 reranked by the LLM, top 5 kept).
+# The judge sees both, each under its own title: comparables for power, candidates for combos.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: true
+decompose: true
+hybrid: true
+type_mana_filter: true   # counterpart queries: type_words $in [type], cmc $lte max mana value
+rerank: llm
+split_context: true
+candidates: 25      # combo candidates that go to the reranker
+context_cards: 5    # cards of each list the judge sees
+context_rules: 10  # rule hits the judge sees, in fused order
