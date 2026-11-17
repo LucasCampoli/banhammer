@@ -320,3 +320,12 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     else:
         graph.add_edge("rerank", END)
     return graph.compile()
+
+
+def evaluate_card(graph, card: CardInput, fmt: str = "modern") -> tuple[BalanceReport, dict]:
+    """Run a compiled pipeline on one card; returns the report and the final state (hits, dropped claims)."""
+    result = graph.invoke({"card": card, "format": fmt, "queries": [], "hits": []})
+    report = result["report"]
+    if not isinstance(report, BalanceReport):
+        report = BalanceReport.model_validate(report)
+    return report, result
