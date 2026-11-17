@@ -9,6 +9,7 @@ results of several queries in one namespace are merged with reciprocal rank fusi
 the first `context_cards` of them. `card_k` (default `k`) sets how many cards each catalog query
 returns, so the reranker can see a wider pool than the rules queries. `decompose_llm` (default
 `llm`) sets the model that writes the expanded queries; the reranker and the judge keep `llm`.
+`retrieve: false` sends no queries, so the judge reads the card alone: the baseline without RAG.
 """
 from __future__ import annotations
 
@@ -215,6 +216,8 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     context_cards = None if context_cards is None else int(context_cards)
 
     def make_queries(state: PipelineState) -> dict:
+        if not cfg.get("retrieve", True):
+            return {"queries": [], "analysis": None}
         queries, analysis = build_queries(state["card"], state.get("format") or "modern", cfg, decompose_llm)
         return {"queries": queries, "analysis": analysis}
 

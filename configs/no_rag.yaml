@@ -1,0 +1,7 @@
+# Baseline without retrieval: the judge reads only the card. Compare every config against it.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+retrieve: false
