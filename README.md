@@ -62,7 +62,7 @@ Zone coordinates are in `configs/zones.yaml` (fractions of the 672x936 card) and
 
 ## Results
 
-Stage 2 ablation on the 37-card gold set (`data/eval/gold.jsonl`). Not run yet. Fill it in from the table `banhammer.eval` prints.
+Stage 2 ablation on the 41-card gold set (`data/eval/gold.jsonl`). Not run yet. Fill it in from the table `banhammer.eval` prints.
 
 | # | Config | recall@5 | recall@10 | recall@25 | risk_accuracy | false_alarm_rate | dropped_per_card |
 | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -116,11 +116,11 @@ The record id is the `oracle_id` for cards and the rule number for rules, so re-
 
 `python -m banhammer.eval` runs a gold set (`data/eval/gold.jsonl`) through one or more pipeline configs, prints a comparison table and writes each card's result to `outputs/eval/<config>.json`. The evaluated card is excluded by `exclude_self`.
 
-The gold set has 37 cards, each with the format it is audited against, its known combo pieces (if any) and the expected `risk`:
+The gold set has 41 cards, each with the format it is audited against, its known combo pieces (if any) and the expected `risk`:
 
 | Group | Format | Expected | Cards | Source |
 | --- | --- | --- | --- | --- |
-| Banned combo and engine cards | Modern | `likely_ban` | 10 | Modern banned list |
+| Banned combo and engine cards | Modern | `likely_ban` | 14 (9 broken by their text) | Modern banned list |
 | Legal two- and three-card combos | Modern | `watch` | 9 | Commander Spellbook (`source` holds the variant id) |
 | Ordinary staples | Modern | `ok` | 10 | Hand-picked |
 | Banned cards | Standard | `likely_ban` | 4 | Scryfall `banned:standard` |
