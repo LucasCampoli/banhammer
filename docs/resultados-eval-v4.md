@@ -2,6 +2,8 @@
 
 Corrida del 2026-11-16 sobre el gold set de 41 cartas (`data/eval/gold.jsonl`), con las métricas y la regla de decisión de [el plan de evaluación](plan-evaluacion.md). El detalle por carta está en `outputs/eval-v4/`.
 
+> **Actualización:** `naive` se repitió dos veces más y dio 0,57 y 0,60. Con el promedio de tres corridas (0,64), la mejora sobre `no_rag` es de 0,12 y no llega al umbral de 0,15. La conclusión 2 de abajo no se sostiene. Ver [lo que aprendimos](aprendizajes.md), sección 5.
+
 ## Resultados
 
 | Config | Acierto baneada / no baneada | Bans por texto detectados | Legales marcadas como ban | Bans por metagame detectados | recall@10 | US$ (41 cartas) |
