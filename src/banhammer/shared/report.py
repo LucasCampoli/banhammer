@@ -1,9 +1,28 @@
-"""Render a BalanceReport as Markdown."""
+"""Render a BalanceReport as Markdown and resolve the sources it cites."""
 from __future__ import annotations
 
 import re
 
-from banhammer.models import BalanceReport, CardInput
+from banhammer.models import BalanceReport, CardInput, Hit
+
+
+def cited_ids(report: BalanceReport) -> set[str]:
+    ids = set(report.power_assessment.comparable_ids)
+    for issue in report.wording_issues:
+        ids.update(issue.rule_ids)
+    for combo in report.combos:
+        ids.update(combo.card_ids)
+    return ids
+
+
+def cited_sources(report: BalanceReport, hits: list[Hit]) -> dict[str, dict]:
+    """The text behind every id the report cites, so a reader sees what each citation points to."""
+    cited = cited_ids(report)
+    return {
+        hit.id: {"namespace": hit.namespace, "name": hit.metadata.get("name") or hit.id, "text": hit.text}
+        for hit in hits
+        if hit.id in cited
+    }
 
 
 def report_stem(name: str) -> str:
