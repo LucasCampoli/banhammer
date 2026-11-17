@@ -14,6 +14,7 @@ Todo se hizo con `gpt-4o-mini` y `text-embedding-3-small`, y con un presupuesto 
 4. **Calibrar el prompt del juez rindió más que cualquier mejora de la búsqueda**, y costó prácticamente nada.
 5. **El RAG sí mejora el veredicto, pero el RAG más simple fue el mejor.** El juez sin búsqueda queda al nivel del azar (0,52); con una búsqueda simple sube a 0,76; con la búsqueda más elaborada, a 0,60.
 6. **El contexto del juez estaba mal armado.** Una sola lista obligaba a elegir entre cartas comparables y candidatas a combo, y le llegaban unas 60 reglas, casi todas irrelevantes. Esto llevó a los dos últimos cambios.
+7. **Arreglar el contexto no alcanzó, porque el problema está antes.** Los dos cambios empataron o empeoraron. La búsqueda casi nunca encuentra la pieza del combo (recall@10 cerca de 0), así que ordenar mejor lo que llega al juez no sirve.
 
 ## 1. Sobre cómo medir
 
@@ -171,10 +172,27 @@ Al probar el cambio anterior vimos que las configs con descomposición buscan re
 
 ## 5. Resultados de los últimos cambios
 
-*Pendiente: `8_split_context` y `9_split_few_rules`, dos corridas cada una.*
+Una corrida de cada config (la segunda se canceló para cuidar el presupuesto). Detalle por carta en `outputs/eval-v5/run-1/`.
+
+| Config | Acierto baneada / no baneada | Bans por texto | Legales marcadas como ban | recall@10 | Tokens por carta | US$ |
+| --- | --- | --- | --- | --- | --- | --- |
+| `no_rag` (promedio de 3) | 0,52 | 0–1 / 9 | 0–1 / 23 | — | ~700 | 0,008 |
+| `naive` | 0,76 | 5 / 9 | 1 / 23 | 0,00 | 2.357 | 0,020 |
+| `4_rerank_llm` | 0,60 | 3 / 9 | 3 / 23 | 0,08 | 8.650 | 0,072 |
+| `8_split_context` | 0,59 | 2 / 9 | 1 / 23 | 0,03 | 8.983 | 0,074 |
+| `9_split_few_rules` | 0,48 | 2 / 9 | 6 / 23 | 0,05 | 4.784 | 0,048 |
+
+- **Separar comparables y candidatas a combo no mejoró el veredicto.** La config 8 marca menos legales como ban que la 4 (1 contra 3), pero detecta un ban menos. Es un empate.
+- **Recortar las reglas cambió hacia dónde se equivoca el juez, no cuánto acierta.** Con 10 reglas en vez de ~60, el juez lee la mitad de tokens y banea más, pero las cartas equivocadas. Detecta los mismos 2 bans por texto (Dark Depths y Mycosynth Lattice) y marca 6 legales como ban: Lightning Bolt, Birds of Paradise, Splinter Twin, Devoted Druid, Exquisite Blood y Mikaeus. Las reglas no eran lo que frenaba la detección.
+- **La búsqueda sigue sin encontrar las piezas** (recall@10 entre 0,03 y 0,05). Todas las configs elaboradas parten de la idea "encontrar la contraparte para que el juez vea el combo", y ese primer paso no funciona. Al juez le llegan candidatas que no hacen combo, y eso lo confunde en una dirección u otra.
+- **`naive` sigue siendo la mejor, pero tampoco se repitió.** Su 0,76 es una sola corrida y el ruido medido es ~0,12. No encuentra ninguna pieza: su ventaja viene de darle al juez poco contexto y dejarlo razonar sobre el texto de la carta.
+
+**Conclusión:** el cuello de botella es la búsqueda de contrapartes, no el armado del contexto. Mientras el recall sea casi 0, cambiar qué ve el juez solo mueve el error de lugar.
 
 ## 6. Lo que queda abierto
 
+- **Repetir `naive`** para saber si su 0,76 es real (US$0,02 por corrida).
+- **Una cota superior con las piezas correctas:** darle al juez las piezas del gold set en vez de las recuperadas. Si así acierta mucho más, vale la pena arreglar la búsqueda; si no, el límite es el juez.
 - **Medir la memorización:** preguntarle al modelo qué carta es cada texto anonimizado. Cuesta menos de un centavo.
 - **Una línea base justa del LLM solo**, con un prompt sin exigencia de citas.
 - **Alinear el criterio de combos del prompt con las etiquetas** (Kiki-Jiki: ¿`watch` o `likely_ban`?).
