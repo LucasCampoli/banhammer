@@ -33,7 +33,7 @@ Banhammer lee una carta y dice si es `ok`, `watch` (vigilar) o `likely_ban` (pro
 El veredicto se lee como binario: baneada (`likely_ban`) o no (`ok` o `watch`). La métrica es la **exactitud balanceada** (*balanced accuracy*): el promedio de dos tasas.
 
 - **Bans por texto detectados**: de las 9 cartas baneadas por su texto, cuántas recibieron `likely_ban`.
-- **Legales respetadas**: de las 27 cartas legales, cuántas *no* recibieron `likely_ban`.
+- **Legales respetadas**: de las 23 cartas legales, cuántas *no* recibieron `likely_ban`.
 
 Una respuesta constante (siempre `likely_ban`, o nunca) saca exactamente 0,5. Eso hace de línea base sin costo. 1,0 es perfecto.
 
