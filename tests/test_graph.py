@@ -1,5 +1,5 @@
 from banhammer.models import BalanceReport, CardInput, Hit, RiskFeatures
-from banhammer.pipeline.graph import decide_risk, free_judge, judge, judge_context, number_hits, validate_names
+from banhammer.pipeline.graph import decide_risk, free_judge, judge, judge_context, number_hits, validate_hybrid, validate_names
 
 
 def card_hit(hit_id: str, name: str, banned: list[str] | None = None) -> Hit:
@@ -126,3 +126,18 @@ def test_validate_names_ignores_the_card_naming_itself():
     })
     cleaned, dropped = validate_names(report, set(), frozenset({"test card"}))
     assert dropped == 0 and cleaned.combos[0].card_ids == []
+
+
+def test_validate_hybrid_accepts_labels_legal_names_and_rule_numbers():
+    report = BalanceReport.model_validate({
+        "wording_issues": [{"description": "rule", "rule_ids": ["702.19a"]},
+                           {"description": "none", "rule_ids": ["made up"]}],
+        "combos": [{"description": "hit", "card_ids": ["C1"]},
+                   {"description": "memory", "card_ids": ["Pestermite"]},
+                   {"description": "invented", "card_ids": ["Pillow Fort", "Test Card"]}],
+        "risk": "watch", "confidence": 0.5,
+    })
+    cleaned, dropped = validate_hybrid(report, {"C1": "oracle-a"}, {"pestermite"}, frozenset({"test card"}))
+    assert dropped == 2
+    assert [c.card_ids for c in cleaned.combos] == [["oracle-a"], ["Pestermite"]]
+    assert cleaned.wording_issues[0].rule_ids == ["702.19a"]

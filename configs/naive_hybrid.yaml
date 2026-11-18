@@ -1,0 +1,10 @@
+# naive retrieval, but the judge may also rely on what the model knows: it cites hits, or names cards
+# (checked against the catalog: they must exist and be legal) and rule numbers from memory.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: false
+cite: hybrid

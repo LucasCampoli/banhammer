@@ -14,6 +14,7 @@ Adding `cite: false` swaps in a prompt with the same risk criteria but no citati
 judge may use what the model knows: the fair "LLM alone" baseline. `cite: catalog` does the same but
 keeps only the cards it names that exist and are legal in the format. `decide: rule` (also without
 retrieval) has the judge estimate RiskFeatures and sets the risk level with `decide_risk`.
+`cite: hybrid` (with retrieval) lets the judge cite hits or name legal cards and rule numbers it knows.
 With `split_context: true` the cards similar to the evaluated one and the combo candidates found by
 the counterpart queries stay apart: they are fused separately, only the candidates are reranked,
 and the judge sees the first `context_cards` of each in its own block. `context_rules` caps the rule
@@ -22,6 +23,7 @@ judge as combo candidates, untouched by retrieval: the eval uses them to give it
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from langchain_core.language_models import BaseChatModel
@@ -339,11 +341,61 @@ def free_judge(llm: BaseChatModel, card: CardInput, fmt: str = "modern") -> tupl
     return report, 0
 
 
-def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tuple[BalanceReport, int]:
-    """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits."""
+_STRICT_CITES = """Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
+Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits."""
+
+# The hybrid judge sees the hits but may also rely on what the model knows, checked against the catalog.
+_HYBRID_CITES = """Cite the bracket labels exactly (C1, R2) for the hits you rely on. You may also rely on your
+own knowledge of existing Magic cards and of the Comprehensive Rules: name such cards by their exact
+English name and such rules by their number (702.19a). Cards you name must exist and be legal in
+{format}; any other name is discarded, and a claim left with no valid citation is discarded too."""
+
+assert _STRICT_CITES in _SYSTEM
+_HYBRID_SYSTEM = _SYSTEM.replace(_STRICT_CITES, _HYBRID_CITES)
+
+_RULE_NUMBER = re.compile(r"^\d{3}(\.\d+[a-z]?)?$")
+
+
+def validate_hybrid(report: BalanceReport, labels: dict[str, str], legal: set[str],
+                    own: frozenset[str] = frozenset()) -> tuple[BalanceReport, int]:
+    """Like validate_citations, but a citation may also be a legal card's name or a rule number.
+
+    Hit labels become hit ids; names and rule numbers are kept as written. The card naming itself
+    (`own`) counts as no citation. Returns the cleaned report and how many claims were discarded.
+    """
+    def cards(citations: list[str]) -> list[str]:
+        kept = _valid(citations, labels, "C")
+        for citation in citations:
+            name = citation.strip()
+            if name.casefold() in legal and name.casefold() not in own and name not in kept:
+                kept.append(name)
+        return kept
+
+    def rules(citations: list[str]) -> list[str]:
+        kept = _valid(citations, labels, "R")
+        kept += [c.strip() for c in citations if _RULE_NUMBER.match(c.strip()) and c.strip() not in kept]
+        return kept
+
+    issues = [issue.model_copy(update={"rule_ids": rules(issue.rule_ids)})
+              for issue in report.wording_issues if rules(issue.rule_ids)]
+    combos = [combo.model_copy(update={"card_ids": cards(combo.card_ids)})
+              for combo in report.combos if cards(combo.card_ids)]
+    power = report.power_assessment.model_copy(
+        update={"comparable_ids": cards(report.power_assessment.comparable_ids)})
+    dropped = len(report.wording_issues) - len(issues) + len(report.combos) - len(combos)
+    return report.model_copy(update={"wording_issues": issues, "combos": combos, "power_assessment": power}), dropped
+
+
+def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "modern",
+          legal: set[str] | None = None) -> tuple[BalanceReport, int]:
+    """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits.
+
+    With `legal` (the hybrid judge) the model may also cite cards and rules it knows; named cards
+    must be in `legal`.
+    """
     labels, numbered = number_hits(hits)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
-    system = _SYSTEM.format(format=fmt.title())
+    system = (_SYSTEM if legal is None else _HYBRID_SYSTEM).format(format=fmt.title())
     if any(hit.purpose == "combo" for hit in hits):
         system += _SPLIT_NOTE
     result = llm.with_structured_output(BalanceReport).invoke([
@@ -351,7 +403,9 @@ def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "mode
         HumanMessage(content=prompt),
     ])
     report = result if isinstance(result, BalanceReport) else BalanceReport.model_validate(result)
-    return validate_citations(report, labels)
+    if legal is None:
+        return validate_citations(report, labels)
+    return validate_hybrid(report, labels, legal, frozenset(card.names()))
 
 
 RERANKERS = ("none", "llm", "cross_encoder")
@@ -385,15 +439,19 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     split_context = bool(cfg.get("split_context", False))
     context_rules = cfg.get("context_rules")
     context_rules = None if context_rules is None else int(context_rules)
-    # cite: true (claims must cite hits), false (no citation rules) or catalog (named cards must be legal ones).
+    # cite: true (claims must cite hits), false (no citation rules), catalog (named cards must be legal
+    # ones) or hybrid (with retrieval: cite hits, or name legal cards and rule numbers from memory).
     cite = cfg.get("cite", True)
-    if cite not in (True, False, "catalog"):
-        raise ValueError(f"cite must be true, false or catalog, got {cite!r}")
+    if cite not in (True, False, "catalog", "hybrid"):
+        raise ValueError(f"cite must be true, false, catalog or hybrid, got {cite!r}")
     decide = str(cfg.get("decide", "llm"))
     if decide not in ("llm", "rule"):
         raise ValueError(f"decide must be llm or rule, got {decide!r}")
-    if (cite is not True or decide == "rule") and cfg.get("retrieve", True):
+    retrieves = cfg.get("retrieve", True)
+    if (cite in (False, "catalog") or decide == "rule") and retrieves:
         raise ValueError("cite: false|catalog and decide: rule are only for the judge without retrieval (retrieve: false)")
+    if cite == "hybrid" and not retrieves:
+        raise ValueError("cite: hybrid needs retrieval; without it use cite: catalog")
     legal_by_format: dict[str, set[str]] = {}
 
     def legal(fmt: str) -> set[str]:
@@ -447,7 +505,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
 
     def generate(state: PipelineState) -> dict:
         fmt = state.get("format") or "modern"
-        if decide == "rule" or cite is not True:
+        if decide == "rule" or cite in (False, "catalog"):
             if decide == "rule":
                 report, dropped = feature_judge(llm, state["card"], fmt), 0
             else:
@@ -457,7 +515,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
                 report, dropped = validate_names(report, legal(fmt), own)
             return {"report": report, "dropped_claims": dropped}
         hits = (state.get("oracle_hits") or []) + judge_context(state.get("hits") or [], context_cards, context_rules)
-        report, dropped = judge(llm, state["card"], hits, state.get("format") or "modern")
+        report, dropped = judge(llm, state["card"], hits, fmt, legal(fmt) if cite == "hybrid" else None)
         return {"report": report, "dropped_claims": dropped}
 
     graph = StateGraph(PipelineState)

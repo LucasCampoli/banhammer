@@ -1,0 +1,10 @@
+# naive_hybrid with a stronger judge. gpt-5.4-mini is a reasoning model: it takes reasoning_effort
+# instead of temperature and costs about 30x more per card than gpt-4o-mini.
+llm:
+  model: gpt-5.4-mini
+  reasoning_effort: low
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: false
+cite: hybrid
