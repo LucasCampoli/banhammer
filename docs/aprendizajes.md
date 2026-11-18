@@ -306,6 +306,19 @@ Para separar lo que el juez percibe de lo que decide, `no_rag_rule` (`decide: ru
   - **Cambia qué errores comete, no cuántos.** Distinguir un combo baneado de uno legal sigue fuera de su alcance, lo que refuerza la conclusión de la sección 5: lo que los separa (velocidad, consistencia, metagame) no está en el texto.
 - **Advertencias:** son dos corridas de 18 cartas; se apoya en los precedentes y en lo que sabe de las cartas originales; no se corrió sobre el gold set; y cuesta unas 13 veces más por carta que `gpt-4o-mini` (US$0,0047 contra US$0,00035).
 
+### Los motivos de cada ban
+
+El juez veía "(banned in modern)" pero no el porqué. `python -m banhammer.ingest.ban_announcements` descarga los 59 anuncios de bans que lista el sitemap de Wizards (desde 2014; quedan en caché en `data/raw/ban-announcements/`), junta los párrafos que nombran cada carta baneada en Modern o Standard, y `gpt-4o-mini` resume el motivo en una o dos oraciones. Hay motivo para **46 de las 65** cartas baneadas. Faltan sobre todo los bans de 2011 a 2013 (las tierras artefacto, Skullclamp, Hypergenesis, Blazing Shoal), cuyos anuncios no están en el sitemap. Algunos motivos tienen ruido: el de Golgari Grave-Troll describe una restricción en otro formato, y algunas fechas no corresponden al ban. Con `ban_reasons: true`, el juez lee el motivo junto a la marca: "(banned in modern: Hogaak fue baneado por su enorme impacto en el metagame…)". No hace falta reindexar.
+
+| Config | Corridas | Gold set | Pares | Pares acertados enteros |
+| --- | --- | --- | --- | --- |
+| `naive` | 3 | 0,64 | 0,89 (0,83–0,94) | 6–8 de 9 |
+| `naive_reasons` | 1 | 0,60 | 0,94 | 8 de 9 |
+
+- **Los motivos no cambian el veredicto de forma medible.** En los pares queda en el rango de `naive`; en el gold set, apenas por debajo. Es una sola corrida.
+- **En el gold set, el juez nunca lee el motivo de la carta que evalúa** (se excluye a sí misma), solo los de sus vecinas. Detecta Hogaak y Krark-Clan Ironworks, pero sigue dejando en `watch` a Mycosynth Lattice, Hypergenesis y Skullclamp, y banea combos legales (Devoted Druid, Isochron Scepter, Exquisite Blood).
+- **Los motivos hablan del metagame de su momento** ("más Top 8 que cualquier otro mazo"). Para una carta nueva dicen qué tipo de carta preocupa a Wizards, pero no si esta carta en particular va a dominar. Para eso harían falta datos del metagame actual.
+
 ### Conclusión
 
 - **El gold set de cartas reales subestimaba al RAG y sobreestimaba al LLM solo.** El LLM recuerda las cartas famosas, y el precedente de cada ban quedaba excluido por diseño.
@@ -316,7 +329,7 @@ Para separar lo que el juez percibe de lo que decide, `no_rag_rule` (`decide: ru
 
 - **Un juez de razonamiento más fuerte** (`gpt-5.5`, o `gpt-5.4-mini` con más `reasoning_effort`), medido sobre los pares y con `oracle_pieces`. `gpt-5.4-mini` con esfuerzo bajo no mejoró de forma medible.
 - **Más pares mínimos, sobre todo de mecanismos sin precedente baneado**, revisados por alguien que juegue: los 9 actuales los escribimos nosotros, y las versiones justas de Thawing Abyss y Gearwing Atelier son discutibles.
-- **Indexar información que hoy falta:** los anuncios de bans de Wizards (que explican cada ban, excluyendo los del gold set) y datos de metagame.
+- **Datos de metagame** (participación de cada mazo, resultados de torneos) para el juez. Los motivos de los bans ya están (`ban_reasons: true`) y no cambiaron el veredicto; falta revisarlos a mano y completar los bans de 2011 a 2013.
 - **Alinear el criterio de combos del prompt con las etiquetas** (Kiki-Jiki: ¿`watch` o `likely_ban`?).
 - **Indexar cada habilidad por separado**, la mejora de búsqueda más prometedora sin probar.
 - **Un modelo mejor para la descomposición**, cuando haya presupuesto.
