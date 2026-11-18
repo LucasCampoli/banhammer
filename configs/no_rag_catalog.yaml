@@ -1,0 +1,9 @@
+# The LLM alone (as no_rag_free), but every card it names must exist and be legal in the format:
+# combos that only name unknown or illegal cards are discarded and counted.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+retrieve: false
+cite: catalog

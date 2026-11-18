@@ -1,5 +1,5 @@
-from banhammer.models import BalanceReport, CardInput, Hit
-from banhammer.pipeline.graph import judge, judge_context, number_hits
+from banhammer.models import BalanceReport, CardInput, Hit, RiskFeatures
+from banhammer.pipeline.graph import decide_risk, free_judge, judge, judge_context, number_hits, validate_names
 
 
 def card_hit(hit_id: str, name: str, banned: list[str] | None = None) -> Hit:
@@ -71,3 +71,58 @@ def test_judge_context_caps_the_rules():
     rules = [Hit(id=f"r{i}", namespace="rules", text="...", source="dense") for i in range(4)]
     assert [hit.id for hit in judge_context(rules + [card_hit("s", "Opt")], 5, 2)] == ["r0", "r1", "s"]
     assert len(judge_context(rules, None)) == 4
+
+
+def test_free_judge_keeps_combos_that_name_cards_from_memory():
+    answer = BalanceReport.model_validate({
+        "combos": [{"description": "infinite", "card_ids": ["Pestermite"], "sequence": []}],
+        "risk": "likely_ban", "confidence": 0.8,
+    })
+    report, dropped = free_judge(FakeLLM(answer), card=CARD)
+    assert dropped == 0
+    assert report.combos[0].card_ids == ["Pestermite"]
+
+
+def features(**overrides) -> RiskFeatures:
+    base = {"combo_outcome": "none", "combo_cards_needed": 0, "power_vs_cost": "on_curve", "real_drawback": False}
+    return RiskFeatures.model_validate({**base, **overrides})
+
+
+def test_decide_risk_bans_a_fast_two_card_combo():
+    fast = features(combo_outcome="infinite_resources", combo_cards_needed=2, earliest_win_turn=3)
+    assert decide_risk(fast)[0] == "likely_ban"
+
+
+def test_decide_risk_watches_a_slow_combo_and_an_incremental_one_is_ok():
+    slow = features(combo_outcome="wins_game", combo_cards_needed=2, earliest_win_turn=4)
+    value = features(combo_outcome="incremental_value", combo_cards_needed=2, earliest_win_turn=3)
+    assert decide_risk(slow)[0] == "watch"
+    assert decide_risk(value)[0] == "ok"
+
+
+def test_decide_risk_bans_raw_power_only_without_a_drawback():
+    assert decide_risk(features(power_vs_cost="far_above_curve"))[0] == "likely_ban"
+    assert decide_risk(features(power_vs_cost="far_above_curve", real_drawback=True))[0] == "watch"
+
+
+def test_validate_names_drops_combos_naming_only_unknown_cards():
+    report = BalanceReport.model_validate({
+        "combos": [{"description": "made up", "card_ids": ["Pillow Fort"]},
+                   {"description": "real", "card_ids": ["Pestermite", "Pillow Fort"]},
+                   {"description": "alone", "card_ids": []}],
+        "power_assessment": {"summary": "", "comparable_ids": ["Twinflame", "Not A Card"]},
+        "risk": "watch", "confidence": 0.5,
+    })
+    cleaned, dropped = validate_names(report, {"pestermite", "twinflame"})
+    assert dropped == 1
+    assert [c.card_ids for c in cleaned.combos] == [["Pestermite"], []]
+    assert cleaned.power_assessment.comparable_ids == ["Twinflame"]
+
+
+def test_validate_names_ignores_the_card_naming_itself():
+    report = BalanceReport.model_validate({
+        "combos": [{"description": "alone", "card_ids": ["Test Card"]}],
+        "risk": "watch", "confidence": 0.5,
+    })
+    cleaned, dropped = validate_names(report, set(), frozenset({"test card"}))
+    assert dropped == 0 and cleaned.combos[0].card_ids == []

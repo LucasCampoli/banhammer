@@ -1,0 +1,11 @@
+# The LLM alone estimates concrete features (combo outcome, cards needed, earliest win turn, power
+# versus cost) and a fixed rule sets the risk level (decide_risk in pipeline/graph.py). Named cards
+# are checked against the catalog as in no_rag_catalog.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+retrieve: false
+cite: catalog
+decide: rule

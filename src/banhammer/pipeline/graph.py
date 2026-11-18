@@ -10,6 +10,10 @@ the first `context_cards` of them. `card_k` (default `k`) sets how many cards ea
 returns, so the reranker can see a wider pool than the rules queries. `decompose_llm` (default
 `llm`) sets the model that writes the expanded queries; the reranker and the judge keep `llm`.
 `retrieve: false` sends no queries, so the judge reads the card alone: the baseline without RAG.
+Adding `cite: false` swaps in a prompt with the same risk criteria but no citation rules, so the
+judge may use what the model knows: the fair "LLM alone" baseline. `cite: catalog` does the same but
+keeps only the cards it names that exist and are legal in the format. `decide: rule` (also without
+retrieval) has the judge estimate RiskFeatures and sets the risk level with `decide_risk`.
 With `split_context: true` the cards similar to the evaluated one and the combo candidates found by
 the counterpart queries stay apart: they are fused separately, only the candidates are reranked,
 and the judge sees the first `context_cards` of each in its own block. `context_rules` caps the rule
@@ -24,13 +28,14 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
-from banhammer.models import BalanceReport, CardInput, Hit, Query
+from banhammer.models import BalanceReport, CardInput, Combo, Hit, PowerAssessment, Query, RiskFeatures
 from banhammer.pipeline.query import build_queries
 from banhammer.pipeline.rerank import cross_encoder_rerank, llm_rerank, rerank_cards
 from banhammer.pipeline.retrieval import BM25Index, fuse_by_namespace
 from banhammer.pipeline.state import PipelineState
 from banhammer.providers import StoreFactory, get_embeddings, get_llm
 from banhammer.shared.config import ROOT, load_env, load_yaml
+from banhammer.shared.documents import read_jsonl
 
 _SYSTEM = """You are a Magic: The Gathering judge for the {format} format.
 You are given a card and numbered reference hits. Card hits are labeled [C1], [C2], ...
@@ -60,6 +65,46 @@ them as combo pieces there. Use them only as precedents: a card close to a banne
 
 Cite the bracket labels exactly (C1, R2). Every claim must cite the hits it relies on.
 Claims with no valid citation are discarded. Do not invent rules or cards that are not in the hits."""
+
+# The judge without retrieval and without the citation rules: it may rely on what the model knows.
+# The risk criteria are the same as in _SYSTEM, only rewritten to not refer to retrieved hits.
+_FREE_SYSTEM = """You are a Magic: The Gathering judge for the {format} format.
+You are given a card. There are no reference hits: rely on your own knowledge of existing Magic
+cards and of the Comprehensive Rules.
+
+Write a balance report:
+- wording_issues: problems with how the card is written. Put the rule numbers you rely on in rule_ids.
+- combos: dangerous interactions with existing cards legal in {format}. Put their names in card_ids
+  and list the sequence of plays.
+- power_assessment: power versus cost compared with existing cards at a similar cost. Put their names in comparable_ids.
+- risk_rationale: one or two sentences that apply the risk criteria below to this card.
+- risk: ok, watch, or likely_ban, and a confidence between 0 and 1.
+
+Risk criteria, for the {format} format:
+- likely_ban: the card is far stronger than any existing card at its cost, or it enables a cheap,
+  fast combo that wins the game or makes infinite resources, or it is a near copy of a card that
+  is banned in {format}. Banned cards in this format are usually like that.
+- watch: the card is a known piece of a combo that needs several specific cards, or it is at the
+  top of the power curve for its cost but has a real drawback or a clear answer.
+- ok: its power is in line with comparable existing cards, and it has no dangerous combo you can name.
+  Most cards are ok. Being efficient, popular or having synergies is not enough for watch:
+  removal, counterspells, card draw and mana creatures at a fair rate are ok.
+Choose watch only when you can name the concrete reason it is not ok, and choose likely_ban
+whenever the card meets a likely_ban criterion, even if you are unsure.
+
+Cards banned in {format} cannot be played there, so never use them as combo pieces. A card close
+to a banned card is a warning sign."""
+
+# The judge that estimates features instead of choosing the risk level. It does not see the rule.
+_FEATURES_SYSTEM = """You are a Magic: The Gathering judge for the {format} format.
+You are given a card. There are no reference hits: rely on your own knowledge of existing Magic
+cards and of the Comprehensive Rules.
+
+Estimate the facts asked for in the schema as accurately as you can. Be concrete and literal:
+- Work out the combo step by step and check that it really loops: if each repetition costs mana
+  or another resource, it is incremental_value, not infinite_resources.
+- Name only existing cards that are legal in {format}. Cards banned there cannot be combo pieces.
+- Most cards have no dangerous combo and are on curve."""
 
 _SPLIT_NOTE = """
 
@@ -207,6 +252,93 @@ def validate_citations(report: BalanceReport, labels: dict[str, str]) -> tuple[B
     return cleaned, dropped
 
 
+def legal_names(cards_path: Path, fmt: str) -> set[str]:
+    """Casefolded names of the catalog cards legal (not banned) in `fmt`, faces of split cards included."""
+    names: set[str] = set()
+    for doc in read_jsonl(cards_path):
+        meta = doc.metadata
+        if fmt in (meta.get("formats") or []) and fmt not in (meta.get("banned") or []):
+            full = str(meta.get("name", ""))
+            names.add(full.casefold())
+            names.update(part.strip().casefold() for part in full.split("//"))
+    return names
+
+
+def validate_names(report: BalanceReport, legal: set[str], own: frozenset[str] = frozenset()) -> tuple[BalanceReport, int]:
+    """Keep only card names that exist and are legal in the format, for a judge that names cards from memory.
+
+    `own` holds the evaluated card's names (casefolded): the judge may name the card itself, which
+    is neither kept nor counted as unknown. A combo whose other cards are all unknown or illegal is
+    discarded; a combo that names no other card (the card alone) is kept. Returns the cleaned report
+    and how many combos were discarded.
+    """
+    def known(names: list[str]) -> list[str]:
+        return [name for name in names if name.strip().casefold() in legal]
+
+    combos = []
+    for combo in report.combos:
+        others = [name for name in combo.card_ids if name.strip().casefold() not in own]
+        valid = known(others)
+        if valid or not others:
+            combos.append(combo.model_copy(update={"card_ids": valid}))
+    power = report.power_assessment.model_copy(
+        update={"comparable_ids": known(report.power_assessment.comparable_ids)})
+    cleaned = report.model_copy(update={"combos": combos, "power_assessment": power})
+    return cleaned, len(report.combos) - len(combos)
+
+
+def decide_risk(features: RiskFeatures) -> tuple[str, str]:
+    """The risk level from the judge's estimates, by a rule fixed before any run. Returns (risk, why).
+
+    Modern's own policy is that no deck should win consistently before turn four, so a cheap
+    two-card combo that wins or loops by turn three is likely_ban, and so is raw power far above
+    the curve with no real drawback. Any game-winning or looping combo, or power above the curve,
+    is watch. Everything else is ok.
+    """
+    loops = features.combo_outcome in ("wins_game", "infinite_resources")
+    fast = features.earliest_win_turn is not None and features.earliest_win_turn <= 3
+    if loops and 0 < features.combo_cards_needed <= 2 and fast:
+        return "likely_ban", "a combo of two cards or fewer wins or loops by turn three"
+    if features.power_vs_cost == "far_above_curve" and not features.real_drawback:
+        return "likely_ban", "far above the curve with no real drawback"
+    if loops:
+        return "watch", "a combo wins or loops, but it is slower or needs more cards"
+    if features.power_vs_cost in ("above_curve", "far_above_curve"):
+        return "watch", "above the curve"
+    return "ok", "no fast combo and power on curve"
+
+
+def feature_judge(llm: BaseChatModel, card: CardInput, fmt: str = "modern") -> BalanceReport:
+    """Ask the LLM for RiskFeatures from the card alone, and turn them into a report with decide_risk."""
+    result = llm.with_structured_output(RiskFeatures).invoke([
+        SystemMessage(content=_FEATURES_SYSTEM.format(format=fmt.title())),
+        HumanMessage(content=f"Card:\n{describe(card)}"),
+    ])
+    features = result if isinstance(result, RiskFeatures) else RiskFeatures.model_validate(result)
+    risk, why = decide_risk(features)
+    combos = [] if features.combo_outcome == "none" or not features.best_combo else [
+        Combo(description=features.best_combo, card_ids=features.combo_cards)]
+    return BalanceReport(
+        combos=combos,
+        power_assessment=PowerAssessment(summary=f"{features.power_vs_cost}; real drawback: {features.real_drawback}",
+                                         comparable_ids=features.comparable_cards),
+        risk_rationale=f"Rule: {why}. {features.rationale} Features: {features.model_dump_json()}",
+        risk=risk,
+        # The rule gives no probability; the confidence is not meaningful for this judge.
+        confidence=0.5,
+    )
+
+
+def free_judge(llm: BaseChatModel, card: CardInput, fmt: str = "modern") -> tuple[BalanceReport, int]:
+    """Ask the LLM for a BalanceReport from the card alone, with no citation rules. Nothing is discarded."""
+    result = llm.with_structured_output(BalanceReport).invoke([
+        SystemMessage(content=_FREE_SYSTEM.format(format=fmt.title())),
+        HumanMessage(content=f"Card:\n{describe(card)}"),
+    ])
+    report = result if isinstance(result, BalanceReport) else BalanceReport.model_validate(result)
+    return report, 0
+
+
 def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "modern") -> tuple[BalanceReport, int]:
     """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits."""
     labels, numbered = number_hits(hits)
@@ -253,6 +385,21 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     split_context = bool(cfg.get("split_context", False))
     context_rules = cfg.get("context_rules")
     context_rules = None if context_rules is None else int(context_rules)
+    # cite: true (claims must cite hits), false (no citation rules) or catalog (named cards must be legal ones).
+    cite = cfg.get("cite", True)
+    if cite not in (True, False, "catalog"):
+        raise ValueError(f"cite must be true, false or catalog, got {cite!r}")
+    decide = str(cfg.get("decide", "llm"))
+    if decide not in ("llm", "rule"):
+        raise ValueError(f"decide must be llm or rule, got {decide!r}")
+    if (cite is not True or decide == "rule") and cfg.get("retrieve", True):
+        raise ValueError("cite: false|catalog and decide: rule are only for the judge without retrieval (retrieve: false)")
+    legal_by_format: dict[str, set[str]] = {}
+
+    def legal(fmt: str) -> set[str]:
+        if fmt not in legal_by_format:
+            legal_by_format[fmt] = legal_names(_processed_dir(cfg) / "cards.jsonl", fmt)
+        return legal_by_format[fmt]
 
     def make_queries(state: PipelineState) -> dict:
         if not cfg.get("retrieve", True):
@@ -299,6 +446,16 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
         return {"hits": rerank_cards(hits, reorder, candidates)}
 
     def generate(state: PipelineState) -> dict:
+        fmt = state.get("format") or "modern"
+        if decide == "rule" or cite is not True:
+            if decide == "rule":
+                report, dropped = feature_judge(llm, state["card"], fmt), 0
+            else:
+                report, dropped = free_judge(llm, state["card"], fmt)
+            if cite == "catalog":
+                own = frozenset(name.casefold() for name in state["card"].names())
+                report, dropped = validate_names(report, legal(fmt), own)
+            return {"report": report, "dropped_claims": dropped}
         hits = (state.get("oracle_hits") or []) + judge_context(state.get("hits") or [], context_cards, context_rules)
         report, dropped = judge(llm, state["card"], hits, state.get("format") or "modern")
         return {"report": report, "dropped_claims": dropped}

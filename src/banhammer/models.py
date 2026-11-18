@@ -212,6 +212,30 @@ class PowerAssessment(BaseModel):
     comparable_ids: list[str] = Field(default_factory=list)
 
 
+class RiskFeatures(BaseModel):
+    """What the judge estimates about a card. The risk level follows from these by a fixed rule."""
+
+    best_combo: str = Field("", description="The most dangerous interaction of this card with existing cards "
+                                            "legal in the format, as a short sequence of plays. Empty if none.")
+    combo_cards: list[str] = Field(default_factory=list,
+                                   description="Exact English names of the other existing cards that combo needs.")
+    combo_outcome: Literal["wins_game", "infinite_resources", "incremental_value", "none"] = Field(
+        description="What the combo achieves: it wins the game outright, it makes an unbounded amount of "
+                    "something (mana, tokens, life, damage), it only builds an advantage over several turns, "
+                    "or there is no combo.")
+    combo_cards_needed: int = Field(ge=0, description="Cards the combo needs in total, counting this one. "
+                                                      "0 if there is no combo.")
+    earliest_win_turn: int | None = Field(None, description="Earliest turn a realistic deck built around this card "
+                                                            "can win or lock the game with it, on the play. Null if "
+                                                            "it does not win or lock games.")
+    comparable_cards: list[str] = Field(default_factory=list,
+                                        description="Exact English names of existing cards with a similar role and cost.")
+    power_vs_cost: Literal["below_curve", "on_curve", "above_curve", "far_above_curve"] = Field(
+        description="Its power for its cost compared with those cards.")
+    real_drawback: bool = Field(description="Whether it has a drawback that really limits it.")
+    rationale: str = Field("", description="One or two sentences explaining the estimates.")
+
+
 class BalanceReport(BaseModel):
     wording_issues: list[WordingIssue] = Field(default_factory=list)
     combos: list[Combo] = Field(default_factory=list)

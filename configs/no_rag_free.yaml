@@ -1,0 +1,9 @@
+# The LLM alone: no retrieval, and a judge prompt with the same risk criteria but no citation
+# rules, so it may rely on what the model knows. no_rag keeps the citation rules with nothing to cite.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+retrieve: false
+cite: false
