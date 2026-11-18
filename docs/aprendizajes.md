@@ -19,7 +19,7 @@ Todo se hizo con `gpt-4o-mini` y `text-embedding-3-small`, y con un presupuesto 
 9. **La línea base sin RAG era injusta, y el gold set está contaminado por memoria.** Sin la exigencia de citas, el LLM solo saca 0,69, al nivel de `naive`. Pero el modelo reconoce 16 de las 41 cartas por su texto anonimizado: estaban en sus datos de entrenamiento.
 10. **Con cartas inventadas, el RAG simple es lo mejor: 0,89 contra 0,72 del LLM solo.** En 9 pares de cartas ficticias (una versión rota y otra justa), la búsqueda trae como precedente la carta baneada en la que se inspira la versión rota. En el gold set eso no se veía, porque la carta evaluada es la propia baneada y se excluye de los resultados. **El valor del RAG está en los precedentes baneados, no en las piezas de combo.**
 11. **Decidir con una regla fija no arregla al juez.** Si el juez estima rasgos concretos (turno en que gana, piezas, poder por costo) y una regla decide, nunca banea una carta legal pero casi no detecta nada: `gpt-4o-mini` estima mal los rasgos. El problema es razonar la mecánica, no dónde poner el corte.
-12. **Un juez más capaz tampoco lo arregla, al menos no de forma medible.** Con el mismo RAG y el mismo prompt, `gpt-5.4-mini` como juez acertó los 9 pares en la primera corrida (1,00), pero 7 en la segunda (0,83). El promedio, 0,92, queda a 0,03 de `naive` con `gpt-4o-mini`. Separa bien el par de Dark Depths, pero el de Thopter (loop infinito contra incremental) sigue siendo una moneda al aire. **Otra vez, la primera corrida exageró.**
+12. **Un juez más capaz va en la dirección correcta, pero los pares no tienen margen para medirlo.** Con el mismo RAG y el mismo prompt, `gpt-5.4-mini` como juez acertó los 9 pares en la primera corrida (1,00) y 7 en la segunda (0,83). El promedio, 0,92, le saca 0,03 a `naive` con `gpt-4o-mini`. Pero `naive` ya saca 0,89, así que ningún juez podría superar el umbral de 0,15 en este set. Separa bien el par de Dark Depths; el de Thopter (loop infinito contra incremental) sigue siendo una moneda al aire. **Otra vez, la primera corrida exageró.** Con `oracle_pieces`, que sí tiene margen, el juez caro saca 0,62, lo mismo que `gpt-4o-mini`: cambia qué combos legales banea, pero no cuánto acierta.
 
 ## 1. Sobre cómo medir
 
@@ -291,16 +291,26 @@ Para separar lo que el juez percibe de lo que decide, `no_rag_rule` (`decide: ru
 | `naive_hybrid_gpt5_mini` (2 corridas) | gpt-5.4-mini | — | 1,00 / 0,83 (promedio 0,92) | 9 y 7 de 9 | ~0,08 |
 
 - **Mezclar RAG y memoria no suma con el modelo chico.** El híbrido con `gpt-4o-mini` queda igual que `naive` en los pares y por debajo en el gold set (promedio 0,59). En la primera corrida acertó el par de Thopter, pero en la segunda baneó las dos versiones otra vez: fue suerte.
-- **Un juez más capaz mejora poco, y no de forma medible.** `gpt-5.4-mini` (`reasoning_effort: low`) acertó los 9 pares en la primera corrida, pero 7 en la segunda. El promedio, 0,92, queda a 0,03 de `naive` con `gpt-4o-mini`, muy por debajo del umbral. Es el mismo patrón que `naive` (0,76 y después 0,57): **la primera corrida exageró.**
+- **Un juez más capaz va en la dirección correcta, pero este set no puede medirlo.** `gpt-5.4-mini` (`reasoning_effort: low`) acertó los 9 pares en la primera corrida y 7 en la segunda. En promedio acierta un par más y marca una carta justa menos que `naive` con `gpt-4o-mini`, y saca 0,92 contra 0,89. Pero con `naive` en 0,89 la mejora máxima posible es 0,11, menos que el umbral: **los pares son demasiado fáciles para el RAG con precedentes y están cerca del techo.** Además, la primera corrida exageró, con el mismo patrón que `naive` (0,76 y después 0,57).
 - **Lo que sí mejora de forma consistente es el par de Dark Depths.** En las dos corridas separa bien: Frozen Abyss es "casi una copia de una carta baneada en Modern, pero bastante más rápida que ese precedente" → `likely_ban`; Thawing Abyss es "bastante más lenta y menos opresiva" → `watch`. `naive` con `gpt-4o-mini` baneaba la versión justa las tres veces.
 - **El par de Thopter sigue sin resolverse.** En la primera corrida acertó ("un Thopter Foundry más barato, que con Sword of the Meek arma un loop infinito determinista"). En la segunda lo invirtió: dijo que la versión gratis "no crea recursos infinitos" y que la que cuesta {1} "habilita un loop infinito barato". Además baneó Mourner's Harness inventando una "interacción de robo infinito". **Distinguir un loop infinito de uno que cuesta un recurso por vuelta sigue fuera del alcance de los dos modelos.**
+- **Con `oracle_pieces`, que sí tiene margen, tampoco mejora.** Le dimos a `gpt-5.4-mini` las piezas correctas del gold set, con el mismo prompt de citas estrictas que el `oracle_pieces` original. Una corrida (US$0,21, `outputs/eval-v10/`):
+
+  | Juez | Exactitud balanceada | Bans por texto | Legales marcadas como ban | Piezas nombradas |
+  | --- | --- | --- | --- | --- |
+  | gpt-4o-mini | 0,58 | 3 / 9 | 4 / 23 | 0,72 |
+  | gpt-5.4-mini | 0,62 | 3 / 9 | 2 / 23 | 0,74 |
+
+  - Deja en `watch` a Thopter Foundry e Isochron Scepter, los combos legales que `gpt-4o-mini` baneaba porque veía su combo. Pero banea otros dos legales (Heliod y Saheeli Rai).
+  - Es más prudente con los bans por texto: deja en `ok` a Krark-Clan Ironworks, Punishing Fire, Nadu y Blazing Shoal, aun con su pieza delante.
+  - **Cambia qué errores comete, no cuántos.** Distinguir un combo baneado de uno legal sigue fuera de su alcance, lo que refuerza la conclusión de la sección 5: lo que los separa (velocidad, consistencia, metagame) no está en el texto.
 - **Advertencias:** son dos corridas de 18 cartas; se apoya en los precedentes y en lo que sabe de las cartas originales; no se corrió sobre el gold set; y cuesta unas 13 veces más por carta que `gpt-4o-mini` (US$0,0047 contra US$0,00035).
 
 ### Conclusión
 
 - **El gold set de cartas reales subestimaba al RAG y sobreestimaba al LLM solo.** El LLM recuerda las cartas famosas, y el precedente de cada ban quedaba excluido por diseño.
 - **Con cartas inventadas, el RAG simple es la mejor config (0,89 contra 0,72 del LLM solo)**, con una diferencia por encima del umbral. Su valor está en recuperar precedentes baneados. Toda la v2 apuntaba a encontrar piezas de combo, que era el problema equivocado.
-- **Lo que sigue sin resolverse** es lo que mostró `oracle_pieces`: distinguir un combo baneado de uno legal. Un juez más capaz (`gpt-5.4-mini`) ayuda en algún par, pero no de forma medible, y sigue confundiendo un loop infinito con uno que cuesta un recurso por vuelta. El límite es razonar la mecánica, y un modelo un escalón más grande no alcanza para cruzarlo.
+- **Lo que sigue sin resolverse** es lo que mostró `oracle_pieces`: distinguir un combo baneado de uno legal. Un juez más capaz (`gpt-5.4-mini`) tampoco lo resuelve: en los pares va en la dirección correcta pero no hay margen para medirlo, y con `oracle_pieces` saca 0,62, igual que `gpt-4o-mini`. Cambia qué errores comete, no cuántos. Lo que separa un combo baneado de uno legal no está en el texto, y un modelo un escalón más capaz no lo suple.
 
 ## 7. Lo que queda abierto
 

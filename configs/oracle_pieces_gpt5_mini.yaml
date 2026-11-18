@@ -1,0 +1,10 @@
+# oracle_pieces with a stronger judge: the gold combo pieces handed to gpt-5.4-mini, to see whether
+# a more capable judge tells a banned combo from a legal one. Same strict citation rules.
+llm:
+  model: gpt-5.4-mini
+  reasoning_effort: low
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: false
+oracle_pieces: true
