@@ -2,7 +2,7 @@
 
 Banhammer lee una carta de Magic: The Gathering y dice si es `ok`, `watch` (vigilar) o `likely_ban` (probablemente baneable). Para eso busca cartas y reglas relacionadas en un índice vectorial (RAG) y le pide a un LLM, el "juez", un reporte que cite lo que encontró.
 
-Este documento junta lo que fuimos aprendiendo en las sucesivas evaluaciones: qué medíamos mal, qué descubrimos del juez, qué descubrimos de la búsqueda y qué cambiamos en consecuencia. Los detalles están en [la evaluación con el juez calibrado](resultados-eval-etapa-2-juez-v2.md), [el análisis de recall](resultados-analisis-recall.md), [el plan de evaluación](plan-evaluacion.md) y [la comparación contra la línea base sin RAG](resultados-eval-v4.md).
+Este documento junta lo que fuimos aprendiendo en las sucesivas evaluaciones: qué medíamos mal, qué descubrimos del juez, qué descubrimos de la búsqueda y qué cambiamos en consecuencia. Las primeras conclusiones sobre el RAG (puntos 5 a 8) las corrigió la medición sin memoria de la sección 6. Los detalles están en [la evaluación con el juez calibrado](resultados-eval-etapa-2-juez-v2.md), [el análisis de recall](resultados-analisis-recall.md), [el plan de evaluación](plan-evaluacion.md) y [la comparación contra la línea base sin RAG](resultados-eval-v4.md).
 
 Todo se hizo con `gpt-4o-mini` y `text-embedding-3-small`, y con un presupuesto total de unos pocos dólares de API.
 
@@ -16,6 +16,9 @@ Todo se hizo con `gpt-4o-mini` y `text-embedding-3-small`, y con un presupuesto 
 6. **El contexto del juez estaba mal armado.** Una sola lista obligaba a elegir entre cartas comparables y candidatas a combo, y le llegaban unas 60 reglas, casi todas irrelevantes. Esto llevó a los dos últimos cambios.
 7. **Arreglar el contexto no alcanzó.** Los dos cambios empataron o empeoraron. La búsqueda casi nunca encuentra la pieza del combo (recall@10 cerca de 0).
 8. **Pero aunque la búsqueda fuera perfecta, el juez no mejoraría.** Le dimos al juez las piezas correctas del gold set: las nombró en el 72 % de los casos, pero el acierto fue 0,58, igual que sin ellas. Ve el combo, pero no sabe distinguir un combo que merece ban de uno legal. **El límite hoy es el juez, no la búsqueda.**
+9. **La línea base sin RAG era injusta, y el gold set está contaminado por memoria.** Sin la exigencia de citas, el LLM solo saca 0,69, al nivel de `naive`. Pero el modelo reconoce 16 de las 41 cartas por su texto anonimizado: estaban en sus datos de entrenamiento.
+10. **Con cartas inventadas, el RAG simple es lo mejor: 0,89 contra 0,72 del LLM solo.** En 9 pares de cartas ficticias (una versión rota y otra justa), la búsqueda trae como precedente la carta baneada en la que se inspira la versión rota. En el gold set eso no se veía, porque la carta evaluada es la propia baneada y se excluye de los resultados. **El valor del RAG está en los precedentes baneados, no en las piezas de combo.**
+11. **Decidir con una regla fija no arregla al juez.** Si el juez estima rasgos concretos (turno en que gana, piezas, poder por costo) y una regla decide, nunca banea una carta legal pero casi no detecta nada: `gpt-4o-mini` estima mal los rasgos. El problema es razonar la mecánica, no dónde poner el corte.
 
 ## 1. Sobre cómo medir
 
@@ -207,11 +210,86 @@ Para saber si el 0,76 de `naive` era real y si arreglar la búsqueda valía la p
 
 **Conclusión:** el cuello de botella no es la búsqueda ni el armado del contexto, sino la decisión del juez. Mejorar el recall haría que el juez nombre los combos en el reporte (lo que sí le sirve al usuario), pero no que acierte más el veredicto.
 
-## 6. Lo que queda abierto
+## 6. Medir sin memoria
 
-- **Un juez más capaz** (otro modelo, o pocos ejemplos de combos baneados y legales en el prompt), medido primero con `oracle_pieces` porque aísla la decisión del juez.
-- **Medir la memorización:** preguntarle al modelo qué carta es cada texto anonimizado. Cuesta menos de un centavo.
-- **Una línea base justa del LLM solo**, con un prompt sin exigencia de citas.
+La sección anterior dejó tres preguntas abiertas: si la línea base sin RAG era justa, cuánto responde el juez de memoria, y si el problema del juez es dónde pone el corte. Las respondimos con cuatro configs nuevas y un set de cartas inventadas. Detalle en `outputs/eval-v7/` y `outputs/eval-v8/`.
+
+### El LLM solo, sin exigencia de citas
+
+`no_rag` tenía un problema: el prompt exige citar las cartas recuperadas, y sin búsqueda no hay nada que citar, así que el juez casi nunca se animaba a banear. `no_rag_free` es el mismo juez, sin búsqueda, con los mismos criterios de riesgo y sin las reglas de citas (`cite: false`).
+
+| Config | Corridas | Promedio | Bans por texto | Legales marcadas como ban |
+| --- | --- | --- | --- | --- |
+| `no_rag` (con citas) | 0,48 / 0,56 / 0,53 | 0,52 | 0–1 / 9 | 0–1 / 23 |
+| `naive` | 0,76 / 0,57 / 0,60 | 0,64 | 2–5 / 9 | 1–3 / 23 |
+| `no_rag_free` | 0,71 / 0,67 / 0,69 | **0,69** | 5 / 9 las tres veces | 3–5 / 23 |
+
+- **La exigencia de citas era lo que frenaba al juez sin RAG.** Sacarla sube el promedio 0,17, por encima del umbral.
+- **El LLM solo queda al nivel de `naive`** (0,05 arriba, dentro del ruido), y es la config más estable que corrimos.
+- **Inventa cartas.** Sin contar cuando se nombra a sí mismo, entre el 22 % y el 31 % de las cartas que pone en sus combos no existen o están baneadas en el formato. Para Dark Depths propuso Pillow Fort y Rude Awakening. `cite: catalog` descarta esos nombres del reporte, pero no puede cambiar el veredicto, que sale en la misma respuesta.
+
+### Cuánto recuerda el modelo
+
+`python -m banhammer.eval.memorization` le muestra al modelo cada carta como la ve el juez ("Test Card") y le pregunta cuál es. Reconoce **16 de 41**:
+
+| Grupo | Reconocidas |
+| --- | --- |
+| Modern, comunes | 9 / 10 |
+| Modern, bans por texto | 3 / 9 |
+| Modern, combos legales | 3 / 9 |
+| Modern, bans por metagame | 1 / 5 |
+| Standard (todas) | 0 / 8 |
+
+- **El modelo vio estas cartas en su entrenamiento.** Reconoce más las que más circulan en internet (Lightning Bolt, Counterspell) y ninguna de Standard, que son posteriores a su corte de datos. Es **contaminación de datos**: el conjunto de prueba estaba en los datos de entrenamiento.
+- **Los 3 bans por texto que reconoce son justo los que `no_rag_free` detectaba nombrándolos** (Krark-Clan Ironworks, Dark Depths, Mycosynth Lattice). Sin ellos, detecta 2 de 6.
+- **Anonimizar el nombre no alcanza:** "Marit Lage" delata a Dark Depths y "Add {R}{R}{R}{R}{R}" a Seething Song.
+- **No toda la memoria es mala.** Conocer las cartas *existentes* es necesario para ver un combo con ellas. Lo que contamina es reconocer la *carta evaluada* y recordar su veredicto, algo que con una carta nueva no existe.
+
+### Pares mínimos: cartas inventadas
+
+`data/eval/pairs.jsonl` tiene 9 pares de cartas ficticias, 18 en total. Cada par tiene una versión rota (`likely_ban`) y otra justa (`ok`) que difieren en un detalle:
+
+- 6 copian el mecanismo de un ban por texto del gold set (Skullclamp, Krark-Clan Ironworks, Hypergenesis, Blazing Shoal, Dark Depths, Hogaak). Por ejemplo, Gravebinder Harness da +2/-1 y roba dos cartas, con equipar {1}; Mourner's Harness da +2/+1 y roba una, con equipar {3}.
+- 2 son de pura relación poder/costo: un 5/5 con prisa por {G} contra uno por {4}{G}.
+- 1 es la trampa de Thopter Foundry: con Sword of the Meek, la activación gratis es un loop infinito y la que cuesta {1} no.
+
+El modelo no reconoce ninguna de las 18. Tres corridas por config:
+
+| Config | Promedio | Rotas detectadas | Justas marcadas como ban | Pares acertados enteros |
+| --- | --- | --- | --- | --- |
+| **`naive`** | **0,89** (0,89 / 0,83 / 0,94) | **9 / 9 las tres veces** | 1–3 / 9 | 6–8 de 9 |
+| `no_rag_free` | 0,72 (0,67 / 0,72 / 0,78) | 5–6 / 9 | 1–2 / 9 | 4–5 de 9 |
+| `no_rag_rule` | 0,59 (0,56 / 0,61 / 0,61) | 1–2 / 9 | 0 / 9 | 1–2 de 9 |
+
+- **`naive` gana porque recupera el precedente.** Para cada versión rota que copia un ban, la búsqueda trae entre las 10 primeras la carta baneada original, marcada "(banned in modern)": Gravebinder Harness trae a Skullclamp; Frozen Abyss, a Dark Depths; Ossuary Colossus, a Hogaak. El juez aplica el criterio "casi una copia de una carta baneada".
+- **No banea todo lo que se parece.** Mourner's Harness también trae a Skullclamp, y el juez la deja en `watch`.
+- **Por qué esto no se veía en el gold set:** ahí la carta evaluada *es* la baneada, y `exclude_self` la saca de los resultados. El precedente más útil quedaba afuera por diseño.
+- **El LLM solo sostiene 0,72 sin memoria posible**, así que su criterio no es solo memoria. Pero sin precedentes se le escapan Gravebinder Harness y Kindled Fury.
+- **El matiz:** 6 de los 9 pares copian un ban, así que el set favorece la búsqueda de precedentes. Un mecanismo roto sin precedente solo lo prueban los 2 pares de poder (que todas las configs aciertan) y el de Thopter. Ese par sigue sin resolverse: `naive` banea las dos versiones, porque no distingue un loop infinito de uno que cuesta maná.
+
+### Rasgos concretos y una regla fija
+
+Para separar lo que el juez percibe de lo que decide, `no_rag_rule` (`decide: rule`) le pide estimar rasgos concretos: qué logra el combo (gana, recursos infinitos o ventaja incremental), cuántas cartas necesita, el turno más temprano en que gana y el poder frente a su costo. La regla fija, definida antes de correr, aplica la política de Modern de que ningún mazo gane antes del turno 4: es `likely_ban` un combo de dos cartas o menos que gana o hace loop antes del turno 4, o una carta muy por encima de la curva sin desventaja real.
+
+| Set | Corridas | Bans detectados | Legales marcadas como ban |
+| --- | --- | --- | --- |
+| Gold set | 0,56 / 0,50 / 0,56 | 0–1 / 9 | 0 / 23 |
+| Pares | 0,56 / 0,61 / 0,61 | 1–2 / 9 | 0 / 9 |
+
+- **Nunca banea una carta legal, pero casi no detecta nada.** La regla es razonable; el modelo estima mal los rasgos. Para Dark Depths propuso un combo de tres cartas con Archaeomancer y Ghostly Flicker en lugar del de dos con Vampire Hexmage; para Gearwing Workshop usó a Krark-Clan Ironworks, que está baneada.
+- **El problema no es dónde pone el corte el juez, sino que no razona bien la mecánica.** Esto limita lo que podría aportar un fine-tuning que solo le enseñe el criterio.
+
+### Conclusión
+
+- **El gold set de cartas reales subestimaba al RAG y sobreestimaba al LLM solo.** El LLM recuerda las cartas famosas, y el precedente de cada ban quedaba excluido por diseño.
+- **Con cartas inventadas, el RAG simple es la mejor config (0,89 contra 0,72 del LLM solo)**, con una diferencia por encima del umbral. Su valor está en recuperar precedentes baneados. Toda la v2 apuntaba a encontrar piezas de combo, que era el problema equivocado.
+- **Lo que sigue sin resolverse** es lo mismo que mostró `oracle_pieces`: distinguir un combo baneado de uno legal. Hace falta un modelo que razone mejor la mecánica, o información que hoy no está en el texto (velocidad, metagame).
+
+## 7. Lo que queda abierto
+
+- **Un juez más capaz** (otro modelo, o pocos ejemplos de combos baneados y legales en el prompt), medido primero con `oracle_pieces` y con los pares mínimos, porque aíslan la decisión del juez.
+- **Más pares mínimos, sobre todo de mecanismos sin precedente baneado**, revisados por alguien que juegue: los 9 actuales los escribimos nosotros, y las versiones justas de Thawing Abyss y Gearwing Atelier son discutibles.
+- **Indexar información que hoy falta:** los anuncios de bans de Wizards (que explican cada ban, excluyendo los del gold set) y datos de metagame.
 - **Alinear el criterio de combos del prompt con las etiquetas** (Kiki-Jiki: ¿`watch` o `likely_ban`?).
 - **Indexar cada habilidad por separado**, la mejora de búsqueda más prometedora sin probar.
 - **Un modelo mejor para la descomposición**, cuando haya presupuesto.

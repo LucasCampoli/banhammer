@@ -3,6 +3,8 @@
 Corrida del 2026-11-16 sobre el gold set de 41 cartas (`data/eval/gold.jsonl`), con las métricas y la regla de decisión de [el plan de evaluación](plan-evaluacion.md). El detalle por carta está en `outputs/eval-v4/`.
 
 > **Actualización:** `naive` se repitió dos veces más y dio 0,57 y 0,60. Con el promedio de tres corridas (0,64), la mejora sobre `no_rag` es de 0,12 y no llega al umbral de 0,15. La conclusión 2 de abajo no se sostiene. Ver [lo que aprendimos](aprendizajes.md), sección 5.
+>
+> **Segunda actualización:** sin la exigencia de citas, el LLM solo (`no_rag_free`) saca 0,69, al nivel de `naive`. Con cartas inventadas, sin memoria posible, `naive` saca 0,89 y el LLM solo 0,72. Ver [lo que aprendimos](aprendizajes.md), sección 6.
 
 ## Resultados
 
