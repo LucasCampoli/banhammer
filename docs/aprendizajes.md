@@ -19,6 +19,7 @@ Todo se hizo con `gpt-4o-mini` y `text-embedding-3-small`, y con un presupuesto 
 9. **La línea base sin RAG era injusta, y el gold set está contaminado por memoria.** Sin la exigencia de citas, el LLM solo saca 0,69, al nivel de `naive`. Pero el modelo reconoce 16 de las 41 cartas por su texto anonimizado: estaban en sus datos de entrenamiento.
 10. **Con cartas inventadas, el RAG simple es lo mejor: 0,89 contra 0,72 del LLM solo.** En 9 pares de cartas ficticias (una versión rota y otra justa), la búsqueda trae como precedente la carta baneada en la que se inspira la versión rota. En el gold set eso no se veía, porque la carta evaluada es la propia baneada y se excluye de los resultados. **El valor del RAG está en los precedentes baneados, no en las piezas de combo.**
 11. **Decidir con una regla fija no arregla al juez.** Si el juez estima rasgos concretos (turno en que gana, piezas, poder por costo) y una regla decide, nunca banea una carta legal pero casi no detecta nada: `gpt-4o-mini` estima mal los rasgos. El problema es razonar la mecánica, no dónde poner el corte.
+12. **Un juez más capaz sí lo arregla.** Con el mismo RAG y el mismo prompt, `gpt-5.4-mini` como juez acertó los 9 pares de cartas inventadas, incluidos los dos que `gpt-4o-mini` nunca separaba. Es una sola corrida de 18 cartas, pero confirma que **el cuello de botella era la capacidad de razonamiento del juez**.
 
 ## 1. Sobre cómo medir
 
@@ -279,15 +280,37 @@ Para separar lo que el juez percibe de lo que decide, `no_rag_rule` (`decide: ru
 - **Nunca banea una carta legal, pero casi no detecta nada.** La regla es razonable; el modelo estima mal los rasgos. Para Dark Depths propuso un combo de tres cartas con Archaeomancer y Ghostly Flicker en lugar del de dos con Vampire Hexmage; para Gearwing Workshop usó a Krark-Clan Ironworks, que está baneada.
 - **El problema no es dónde pone el corte el juez, sino que no razona bien la mecánica.** Esto limita lo que podría aportar un fine-tuning que solo le enseñe el criterio.
 
+### RAG con memoria, y un juez más capaz
+
+`naive_hybrid` (`cite: hybrid`) es `naive` con un juez que, además de citar lo recuperado, puede nombrar cartas y reglas de memoria. Las cartas que nombra se validan contra el catálogo (tienen que existir y ser legales en el formato). La idea era sumar los precedentes de `naive` y el conocimiento de `no_rag_free`. Para gastar poco, se corrió una o dos veces.
+
+| Config | Juez | Gold set | Pares | Pares acertados enteros | US$ (pares) |
+| --- | --- | --- | --- | --- | --- |
+| `naive` (3 corridas) | gpt-4o-mini | 0,64 | 0,89 (0,83–0,94) | 6–8 de 9 | ~0,005 |
+| `naive_hybrid` (2 corridas) | gpt-4o-mini | 0,66 / 0,52 | 0,89 / 0,89 | 8 y 7 de 9 | ~0,007 |
+| **`naive_hybrid_gpt5_mini`** (1 corrida) | **gpt-5.4-mini** | — | **1,00** | **9 de 9** | 0,084 |
+
+- **Mezclar RAG y memoria no suma con el modelo chico.** El híbrido con `gpt-4o-mini` queda igual que `naive` en los pares y por debajo en el gold set (promedio 0,59). En la primera corrida acertó el par de Thopter, pero en la segunda baneó las dos versiones otra vez: fue suerte.
+- **Con un juez más capaz, el mismo pipeline acierta todo.** `gpt-5.4-mini` (`reasoning_effort: low`) detecta las 9 versiones rotas, no banea ninguna justa y separa los dos pares que `gpt-4o-mini` nunca separaba:
+  - Frozen Abyss: "casi una copia de una carta baneada en Modern, pero bastante más rápida que ese precedente" → `likely_ban`. Thawing Abyss: "bastante más lenta y menos opresiva que el precedente" → `watch`.
+  - Gearwing Workshop: "un Thopter Foundry más barato y más fuerte, que con Sword of the Meek arma un loop infinito determinista" → `likely_ban`. Gearwing Atelier → `watch`.
+- **Es la evidencia que faltaba: el cuello de botella era la capacidad de razonamiento del juez**, no la búsqueda ni el criterio del prompt.
+- **Advertencias:**
+  - Es una sola corrida de 18 cartas.
+  - El razonamiento no es perfecto: para Gearwing Atelier dijo que habilita un loop infinito, cuando cada activación cuesta {1}, y aun así la dejó en `watch`.
+  - Se apoya en los precedentes y en lo que sabe de las cartas originales. Es conocimiento legítimo de cartas existentes, pero 6 de los 9 pares tienen precedente.
+  - No se corrió sobre el gold set, donde además pesaría la contaminación.
+  - Cuesta unas 13 veces más por carta que el juez con `gpt-4o-mini` (US$0,0047 contra US$0,00035). Igual es menos de medio centavo por carta.
+
 ### Conclusión
 
 - **El gold set de cartas reales subestimaba al RAG y sobreestimaba al LLM solo.** El LLM recuerda las cartas famosas, y el precedente de cada ban quedaba excluido por diseño.
 - **Con cartas inventadas, el RAG simple es la mejor config (0,89 contra 0,72 del LLM solo)**, con una diferencia por encima del umbral. Su valor está en recuperar precedentes baneados. Toda la v2 apuntaba a encontrar piezas de combo, que era el problema equivocado.
-- **Lo que sigue sin resolverse** es lo mismo que mostró `oracle_pieces`: distinguir un combo baneado de uno legal. Hace falta un modelo que razone mejor la mecánica, o información que hoy no está en el texto (velocidad, metagame).
+- **Distinguir un combo baneado de uno legal**, lo que `oracle_pieces` mostró que `gpt-4o-mini` no puede, **lo resuelve un juez más capaz**: `gpt-5.4-mini` separó los pares de Dark Depths y de Thopter que el modelo chico nunca separaba. El cuello de botella era el razonamiento del juez, no la búsqueda.
 
 ## 7. Lo que queda abierto
 
-- **Un juez más capaz** (otro modelo, o pocos ejemplos de combos baneados y legales en el prompt), medido primero con `oracle_pieces` y con los pares mínimos, porque aíslan la decisión del juez.
+- **Confirmar el juez más capaz:** repetir `naive_hybrid_gpt5_mini` sobre los pares, y medirlo con `oracle_pieces` y sobre el gold set.
 - **Más pares mínimos, sobre todo de mecanismos sin precedente baneado**, revisados por alguien que juegue: los 9 actuales los escribimos nosotros, y las versiones justas de Thawing Abyss y Gearwing Atelier son discutibles.
 - **Indexar información que hoy falta:** los anuncios de bans de Wizards (que explican cada ban, excluyendo los del gold set) y datos de metagame.
 - **Alinear el criterio de combos del prompt con las etiquetas** (Kiki-Jiki: ¿`watch` o `likely_ban`?).
