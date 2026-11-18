@@ -5,18 +5,15 @@ import argparse
 from pathlib import Path
 
 from banhammer.shared.config import ROOT, load_env
-from banhammer.models import FORMATS, BalanceReport, CardInput
-from banhammer.pipeline import build_graph
+from banhammer.models import FORMATS, CardInput
+from banhammer.pipeline import build_graph, evaluate_card
 from banhammer.shared.report import render_markdown, report_stem
 
 
 def evaluate(card_path: Path, config_path: Path, out_dir: Path, fmt: str = "modern") -> Path:
     load_env()
     card = CardInput.model_validate_json(card_path.read_text(encoding="utf-8"))
-    result = build_graph(config_path).invoke({"card": card, "format": fmt, "queries": [], "hits": []})
-    report = result["report"]
-    if not isinstance(report, BalanceReport):
-        report = BalanceReport.model_validate(report)
+    report, result = evaluate_card(build_graph(config_path), card, fmt)
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = report_stem(card.name)
     json_path = out_dir / f"{stem}.json"

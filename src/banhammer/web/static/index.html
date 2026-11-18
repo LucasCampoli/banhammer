@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Banhammer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <svg class="sigil" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="14" y="10" width="36" height="16" rx="3"/>
+      <rect x="29" y="26" width="6" height="30" rx="2"/>
+    </svg>
+    <div>
+      <h1>Banhammer</h1>
+      <p class="tagline">Forge a card. Let the council judge it.</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel forge" aria-labelledby="forge-title">
+      <h2 id="forge-title">The forge</h2>
+
+      <div class="search">
+        <label for="search-input">Summon an existing card</label>
+        <input id="search-input" type="search" autocomplete="off" placeholder="Search by name..."
+               role="combobox" aria-expanded="false" aria-controls="search-results">
+        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+      </div>
+
+      <div class="examples">
+        <span class="examples-label">Quick trials</span>
+        <div id="examples" class="chips"></div>
+      </div>
+
+      <div class="forge-body">
+        <form id="card-form" class="card-form">
+          <label>Name <input name="name" required maxlength="141"></label>
+          <label>Mana cost <input name="mana_cost" placeholder="{2}{U}{R}"></label>
+          <label>Type line <input name="type_line" placeholder="Creature — Elf Druid"></label>
+          <label>Rules text <textarea name="oracle_text" rows="6"
+                 placeholder="{T}: Add {G}.&#10;Whenever ..."></textarea></label>
+          <div class="stats">
+            <label>Power <input name="power" size="3"></label>
+            <label>Toughness <input name="toughness" size="3"></label>
+            <label>Loyalty <input name="loyalty" size="3"></label>
+          </div>
+          <fieldset class="format">
+            <legend>Format</legend>
+            <label><input type="radio" name="format" value="modern" checked> Modern</label>
+            <label><input type="radio" name="format" value="standard"> Standard</label>
+          </fieldset>
+          <button type="submit" id="judge-button">Bring it before the council</button>
+        </form>
+
+        <div class="preview" aria-label="Card preview">
+          <article id="card-preview" class="card"></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel verdict" aria-labelledby="verdict-title" aria-live="polite">
+      <h2 id="verdict-title">The verdict</h2>
+      <div id="verdict" class="verdict-body">
+        <p class="empty">No card has been judged yet. Forge one, or pick a quick trial.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="credits">
+    Card images and data from <a href="https://scryfall.com">Scryfall</a>.
+    Magic: The Gathering is © Wizards of the Coast; Banhammer is unofficial fan content.
+  </footer>
+</body>
+</html>
