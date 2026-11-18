@@ -1,14 +1,12 @@
 # Banhammer
 
-Balance auditor and rules arbiter for Magic: The Gathering cards. The idea: take a new card, then use RAG over the Comprehensive Rules and the Scryfall catalog to find wording conflicts and broken combos. A card is audited against Modern or Standard. An OCR stage can read the card from an image.
+Balance auditor for Magic: The Gathering cards. Give it a new card and a format (Modern or Standard), and it uses RAG over the Scryfall catalog and the Comprehensive Rules to judge whether the card is `ok`, worth to `watch`, or a `likely_ban`. The report explains why, and every claim cites a card or rule it retrieved.
 
-## Status
+```
+card.json ─▶ build queries ─▶ retrieve (Pinecone) ─▶ drop the card itself ─▶ rerank ─▶ LLM judge ─▶ report
+```
 
-Version 2 (stage 2) adds advanced RAG behind config flags, measured one technique at a time: decomposition of the card into primitives and query expansion toward combo counterparts, hybrid dense + BM25 search with reciprocal rank fusion, type and mana value filters, and reranking with an LLM or a cross-encoder. With every flag off it is version 1.
-
-Version 1 (stage 1): the pipeline embeds the whole card text, retrieves similar cards from the audited format and Comprehensive Rules from Pinecone, drops the card itself from the hits, and asks an LLM for a balance report. Claims in the report that do not cite a retrieved rule or card are discarded. OCR is a separate stage. Symbols inside the rules text (`{T}`, `{2}{R}`) are not handled yet, and the OCR also picks up flavor text, which hurts the `rules_text` score.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together.
+Claims that do not cite a retrieved card or rule are dropped. An optional OCR stage reads cards from images. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces fit together.
 
 ## Setup
 
@@ -20,60 +18,122 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"         # add ,rerank for the cross-encoder reranker (pulls in torch)
 ```
 
-Tesseract is a separate program, pip doesn't install it:
+Copy [.env.example](.env.example) to `.env` and set `BANHAMMER_CONTACT` (sent to Scryfall in the User-Agent), `OPENAI_API_KEY` and `PINECONE_API_KEY`.
+
+Tesseract is only needed for OCR, and pip does not install it:
 
 - Linux: `sudo apt install tesseract-ocr`
 - macOS: `brew install tesseract`
 - Windows: installer from [UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki), then add it to `PATH` or set `TESSERACT_CMD` to the `.exe`.
 
-Copy [.env.example](.env.example) to `.env` and set `BANHAMMER_CONTACT`, `OPENAI_API_KEY` and `PINECONE_API_KEY`.
+## 1. Prepare the data
 
-## Usage
+Run once on a new machine (`data/` is not in git), and again to refresh the data.
 
 ```bash
-python -m banhammer.ingest                  # Scryfall bulk + Comprehensive Rules -> data/processed/
-python -m banhammer.index                   # embed data/processed into Pinecone (cards, rules)
-python -m banhammer evaluate path/to/card.json --format modern   # or standard
-python -m banhammer.eval --configs configs/naive.yaml configs/pipeline.yaml
-python -m banhammer.eval --configs configs/no_rag.yaml configs/naive.yaml configs/pipeline.yaml configs/ablation/*.yaml   # full ablation
-python -m banhammer.eval --configs configs/ablation/7_decompose_gpt5_mini.yaml --retrieval-only   # recall only, no judge
-python -m banhammer.eval --rescore outputs/eval/4_rerank_llm.json   # score a saved run again, no API calls
-python -m banhammer evaluate path/to/card.json --format modern --config configs/ablation/4_rerank_llm.yaml
+python -m banhammer.ingest      # Scryfall bulk + Comprehensive Rules -> data/processed/
+python -m banhammer.index       # embed data/processed/ into Pinecone (cards, rules)
+```
 
-python scripts/download_tessdata.py         # tessdata_best model into data/tessdata/
-python scripts/download_mana_symbols.py     # symbol templates into data/mana_templates/
-python scripts/download_type_vocabulary.py  # type line words into data/type_vocabulary.json
-python scripts/download_benchmark_images.py # OCR benchmark images into images/benchmark/
-python scripts/transcribe_cards.py          # OCR every card in scope into data/processed/ocr_cards.jsonl
-python -m banhammer.ocr images/benchmark/<card id>.jpg --debug
-python scripts/evaluate_ocr.py              # table + outputs/ocr_eval.csv
+- `ingest` skips a source that is already downloaded; `--force` refreshes it.
+- `index` is only needed if your Pinecone project does not have the index yet. The embedding model in `configs/ingest.yaml` and in the pipeline configs must be the same.
+- Optional: `python -m banhammer.ingest.ban_announcements` reads Wizards' banned and restricted announcements and writes why each card was banned to `data/processed/ban_reasons.jsonl`, for configs with `ban_reasons: true`.
+
+## 2. Audit a card
+
+From the command line, with a Scryfall-shaped card JSON:
+
+```bash
+python -m banhammer evaluate path/to/card.json --format modern    # or standard
+```
+
+It writes `outputs/reports/<card name>.json` and `.md`. `--config` picks another pipeline, for example `configs/ablation/4_rerank_llm.yaml`.
+
+From the browser:
+
+```bash
+python -m banhammer.web         # then open http://127.0.0.1:8000
+```
+
+The web UI lets you forge a card or start from an existing one, judge it, and read the report with the text and image of every card and rule it cites.
+
+## 3. Evaluate the pipeline
+
+The gold set `data/eval/gold.jsonl` has 41 real cards with a known verdict. `data/eval/pairs.jsonl` has 9 pairs of invented cards, one broken and one fair version of each, that the model cannot know from memory.
+
+```bash
+python -m banhammer.eval --configs configs/no_rag.yaml configs/naive.yaml configs/pipeline.yaml
+python -m banhammer.eval --configs configs/naive.yaml --gold data/eval/pairs.jsonl
+python -m banhammer.eval --configs configs/ablation/7_decompose_gpt5_mini.yaml --retrieval-only   # recall only, no judge
+python -m banhammer.eval --rescore outputs/eval/naive.json   # score a saved run again, no API calls
+python -m banhammer.eval.memorization                        # how many gold cards the model recognizes
+```
+
+- Every card is sent as "Test Card" so the judge cannot answer from the name (`--keep-names` turns this off).
+- The table prints one row per config, and every card's result goes to `outputs/eval/<config>.json`.
+- The main metric is balanced accuracy on banned or not banned. Responding always the same scores 0.5.
+
+What each metric means and how configs are compared is in [docs/plan-evaluacion.md](docs/plan-evaluacion.md). What we learned is in [docs/aprendizajes.md](docs/aprendizajes.md).
+
+### Configs
+
+Each YAML in `configs/` is one pipeline variant.
+
+| Config | What it is |
+| --- | --- |
+| `no_rag` | The judge reads only the card, no retrieval. The baseline. |
+| `naive` | One dense search with the card text, over the whole catalog. |
+| `pipeline` | `naive` plus a format filter: only cards legal or banned in the audited format. Version 1, and the default. |
+| `ablation/*` | `pipeline` plus one advanced RAG technique per file: decomposition, hybrid BM25 search, type and mana filters, LLM or cross-encoder rerank, split context. |
+| `no_rag_free`, `no_rag_rule`, `no_rag_catalog` | Judges without retrieval that may use what the model knows. |
+| `naive_hybrid`, `naive_reasons` | `naive` with a judge that may also name cards it knows, or that reads why each banned card was banned. |
+| `oracle_pieces` | `naive` plus the right combo pieces from the gold set, as if retrieval were perfect. |
+
+Configs with `hybrid: true` build BM25 from `data/processed/cards.jsonl`, so they need `ingest` first.
+
+## 4. OCR
+
+The OCR reads a card image and transcribes it. It does not feed the judge directly: it transcribes the catalog, and `ingest` indexes those transcriptions.
+
+```bash
+python scripts/download_tessdata.py          # tessdata_best model -> data/tessdata/
+python scripts/download_mana_symbols.py      # symbol templates -> data/mana_templates/
+python scripts/download_type_vocabulary.py   # type line words -> data/type_vocabulary.json
+
+python -m banhammer.ocr path/to/card.jpg --debug    # read one card; --photo for real photos
+python scripts/transcribe_cards.py                  # transcribe every card in scope -> data/processed/ocr_cards.jsonl
+python -m banhammer.ingest --only scryfall_cards --card-text ocr   # rebuild the cards from the transcriptions
+
+python scripts/download_benchmark_images.py  # OCR benchmark images -> images/benchmark/
+python scripts/evaluate_ocr.py               # score the OCR -> outputs/ocr_eval.csv
+```
+
+- Scope: single-faced cards with the 2003 or 2015 frame that are not planeswalkers, about 94% of the indexed cards (`src/banhammer/ocr/scope.py`). The rest keep their Scryfall text.
+- `transcribe_cards.py` downloads the images to `images/cards/` and takes about two hours with 16 cores; it resumes where it stopped. Ingestion works without it, using Scryfall text.
+- `--debug` saves the zone overlay and the preprocessed crops to `outputs/debug/<card>/`.
+- Zone coordinates are in `configs/zones.yaml` and the OCR settings in `configs/ocr.yaml`.
+- The benchmark (`data/eval/ocr_benchmark.jsonl`, 150 cards) and the hand-transcribed `data/eval/ocr_gold.jsonl` are fixed; rebuilding the benchmark with `scripts/build_ocr_benchmark.py` makes results incomparable with older runs.
+
+## Tests
+
+```bash
 pytest
 ```
 
-`evaluate` reads a Scryfall-shaped card JSON and writes `outputs/reports/<card name>.json` and `.md`. `ingest` skips a source whose raw or processed file is already present; pass `--force` to refresh it. Data processed before stage 1 lacks the `formats` metadata, so run `python -m banhammer.ingest --force` and `python -m banhammer.index` again.
+## Repository map
 
-The evaluation plan (metrics, baselines, configs and decision rule) is in [docs/plan-evaluacion.md](docs/plan-evaluacion.md). `configs/no_rag.yaml` judges the card without retrieval, the baseline every config is compared with. `banhammer.eval` sends every gold card as "Test Card" so the judge cannot recall a famous card by name (`--keep-names` turns this off). A combo piece in `data/eval/gold.jsonl` is a card name or a list of cards that fill the same role, and any of them counts for recall; `synergy_pieces` lists deck partners that cannot be found from card text and are not scored; `ban_reason` says whether a banned card is broken by its text or was banned for its metagame results. The headline is binary, banned or not, on the bans the card text can explain; metagame bans are counted apart (see [ARCHITECTURE.md](ARCHITECTURE.md#evaluation)). The table also gives one row of verdicts per gold group. It also prints one row per config and writes every card's result to `outputs/eval/<config>.json`. `configs/naive.yaml` is the baseline without the format filter; `configs/pipeline.yaml` is version 1; `configs/ablation/` adds one stage 2 technique per file (see [ARCHITECTURE.md](ARCHITECTURE.md#ablation)). The configs with `hybrid: true` build BM25 from `data/processed/cards.jsonl`, so `python -m banhammer.ingest` has to run first on a new machine (`data/` is not in git). `python -m banhammer.index` is only needed if your Pinecone project does not have the index yet. The embedding model in `configs/ingest.yaml` and `configs/pipeline.yaml` has to be the same one.
-
-`--debug` saves the zone overlay and the preprocessed crops to `outputs/debug/<card>/`. Use `--photo` for real photos (perspective correction).
-
-The OCR only transcribes single-faced cards with the 2003 or 2015 frame that are not planeswalkers (`banhammer/ocr/scope.py`, about 94% of the indexed cards); the rest keep their Scryfall text. `transcribe_cards.py` downloads their images into `images/cards/` and takes about two hours with 16 cores; it resumes where it stopped. Ingestion uses a card's transcription when there is one (`source: ocr` in the metadata) and its Scryfall text otherwise, so it also works without running it. `python -m banhammer.ingest --only scryfall_cards --card-text ocr` rebuilds the card records from the transcriptions (and fails if there are none); `--card-text scryfall` rebuilds them with Scryfall text for every card, for example to compare the two indexes. The benchmark in `data/eval/ocr_benchmark.jsonl` lists 150 cards drawn uniformly from that population plus a few per risky feature (2003 frame, legendary, white border, low-resolution scan, ...). `scripts/build_ocr_benchmark.py` made it; do not rebuild it unless you want results that cannot be compared with older runs. The benchmark and evaluation scripts read the Scryfall bulk from `data/raw/oracle-cards.jsonl.gz` (pass `--bulk` for another file). Rules text is compared with Oracle text after removing the most common templating changes, so the error still includes some errata. `data/eval/ocr_gold.jsonl` has 30 of those cards transcribed by hand as printed; the evaluation scores them against both references, and the gap between the two is errata, not reading error.
-
-Zone coordinates are in `configs/zones.yaml` (fractions of the 672x936 card) and the OCR settings in `configs/ocr.yaml`.
-
-## Results
-
-Stage 2 ablation on the 41-card gold set (`data/eval/gold.jsonl`). Not run yet. Fill it in from the table `banhammer.eval` prints.
-
-| # | Config | recall@5 | recall@10 | recall@25 | risk_accuracy | false_alarm_rate | dropped_per_card |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 0 | `naive` | | | | | | |
-| 1 | `pipeline` | | | | | | |
-| 2 | `ablation/1_decompose` | | | | | | |
-| 3 | `ablation/2_hybrid` | | | | | | |
-| 4 | `ablation/3_type_mana_filter` | | | | | | |
-| 5 | `ablation/4_rerank_llm` | | | | | | |
-| 6 | `ablation/5_rerank_cross_encoder` | | | | | | |
+| Path | What is there |
+| --- | --- |
+| `src/banhammer/ingest/` | Download and normalize the Scryfall catalog, the rules and the ban announcements |
+| `src/banhammer/index.py`, `indexing/` | Embed the processed data into Pinecone |
+| `src/banhammer/pipeline/` | The LangGraph: queries, retrieval, rerank and judge |
+| `src/banhammer/web/` | Local web UI |
+| `src/banhammer/eval/` | Evaluation, metrics and memorization probe |
+| `src/banhammer/ocr/` | Card OCR |
+| `configs/` | Pipeline, ingest and OCR settings |
+| `data/eval/` | Gold set, invented pairs and OCR benchmark (versioned) |
+| `docs/` | Evaluation plan, learnings and run results (in Spanish) |
 
 ## Notes
 
-Card images and downloaded card data belong to Wizards of the Coast, so `data/raw`, `data/processed`, `images/` and `outputs/` are gitignored. `data/eval` is the hand-written gold set and is versioned. Parts of the code were written with Claude Code.
+Card images and card data belong to Wizards of the Coast, so `data/raw`, `data/processed`, `images/` and `outputs/` are gitignored. Only `data/eval/`, which is hand-written, is versioned. Parts of the code were written with Claude Code.
