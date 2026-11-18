@@ -246,6 +246,20 @@ La sección anterior dejó tres preguntas abiertas: si la línea base sin RAG er
 - **Anonimizar el nombre no alcanza:** "Marit Lage" delata a Dark Depths y "Add {R}{R}{R}{R}{R}" a Seething Song.
 - **No toda la memoria es mala.** Conocer las cartas *existentes* es necesario para ver un combo con ellas. Lo que contamina es reconocer la *carta evaluada* y recordar su veredicto, algo que con una carta nueva no existe.
 
+**Sin las cartas que reconoce.** Re-puntuando gratis las corridas guardadas solo con las 25 cartas que el modelo no reconoce (quedan 6 bans por texto y 11 legales):
+
+| Config | Las 41 cartas | Las 25 no reconocidas |
+| --- | --- | --- |
+| `no_rag_free` (3 corridas) | 0,69 | **0,53** |
+| `naive_hybrid` (2 corridas) | 0,59 | 0,54 |
+| `naive_reasons` (1 corrida) | 0,60 | 0,49 |
+| `oracle_pieces` con gpt-5.4-mini (1 corrida) | 0,62 | 0,58 |
+| `no_rag_rule` (3 corridas) | 0,54 | 0,50 |
+
+- **Toda la ventaja del LLM solo en el gold set era memoria:** sin las cartas que reconoce, queda en el nivel del azar.
+- **Con cartas reales que el modelo no reconoce, ninguna config detecta bien.** Los 6 bans por texto que quedan son los difíciles: Hogaak, Punishing Fire, Nadu, Hypergenesis, Blazing Shoal y Skullclamp.
+- Con tan pocas cartas, cada una mueve mucho el número. Las corridas de `naive` y `no_rag` (`outputs/eval-v4/`, `eval-v6/`) no estaban en la máquina donde se hizo este cálculo.
+
 ### Pares mínimos: cartas inventadas
 
 `data/eval/pairs.jsonl` tiene 9 pares de cartas ficticias, 18 en total. Cada par tiene una versión rota (`likely_ban`) y otra justa (`ok`) que difieren en un detalle:
