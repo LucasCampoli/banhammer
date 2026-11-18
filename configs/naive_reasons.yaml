@@ -1,0 +1,10 @@
+# naive, plus why each banned card was banned (data/processed/ban_reasons.jsonl, from Wizards'
+# banned and restricted announcements) next to its "(banned in ...)" mark.
+llm:
+  model: gpt-4o-mini
+  temperature: 0
+embeddings:
+  model: text-embedding-3-small
+k: 10
+format_filter: false
+ban_reasons: true

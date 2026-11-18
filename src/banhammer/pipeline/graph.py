@@ -15,6 +15,7 @@ judge may use what the model knows: the fair "LLM alone" baseline. `cite: catalo
 keeps only the cards it names that exist and are legal in the format. `decide: rule` (also without
 retrieval) has the judge estimate RiskFeatures and sets the risk level with `decide_risk`.
 `cite: hybrid` (with retrieval) lets the judge cite hits or name legal cards and rule numbers it knows.
+`ban_reasons: true` adds why each banned hit was banned (from ingest.ban_announcements) to its mark.
 With `split_context: true` the cards similar to the evaluated one and the combo candidates found by
 the counterpart queries stay apart: they are fused separately, only the candidates are reranked,
 and the judge sees the first `context_cards` of each in its own block. `context_rules` caps the rule
@@ -23,6 +24,7 @@ judge as combo candidates, untouched by retrieval: the eval uses them to give it
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -174,7 +176,7 @@ def describe(card: CardInput) -> str:
     return text if not details else f"{text}\n" + "; ".join(details)
 
 
-def number_hits(hits: list[Hit]) -> tuple[dict[str, str], str]:
+def number_hits(hits: list[Hit], reasons: dict[tuple[str, str], str] | None = None) -> tuple[dict[str, str], str]:
     """Label hits C1, C2, ... and R1, R2, ... Returns label -> hit id, and the prompt block.
 
     Cards similar to the evaluated one come first, then combo candidates, then rules. When there
@@ -202,6 +204,10 @@ def number_hits(hits: list[Hit]) -> tuple[dict[str, str], str]:
             labels[label] = hit.id
             banned = hit.metadata.get("banned") or []
             flag = f"(banned in {', '.join(banned)}) " if banned else ""
+            # With ban reasons, the judge also reads why: "(banned in modern: <reason>)".
+            why = [reasons[(hit.id, fmt)] for fmt in banned if reasons and (hit.id, fmt) in reasons]
+            if why:
+                flag = f"(banned in {', '.join(banned)}: {' '.join(why)}) "
             lines.append(f"[{label}] {flag}{hit.text}")
     return labels, "\n".join(lines) if lines else "(no hits)"
 
@@ -387,13 +393,14 @@ def validate_hybrid(report: BalanceReport, labels: dict[str, str], legal: set[st
 
 
 def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "modern",
-          legal: set[str] | None = None) -> tuple[BalanceReport, int]:
+          legal: set[str] | None = None,
+          reasons: dict[tuple[str, str], str] | None = None) -> tuple[BalanceReport, int]:
     """Ask the LLM for a BalanceReport, then keep only the claims that cite real hits.
 
     With `legal` (the hybrid judge) the model may also cite cards and rules it knows; named cards
     must be in `legal`.
     """
-    labels, numbered = number_hits(hits)
+    labels, numbered = number_hits(hits, reasons)
     prompt = f"Card:\n{describe(card)}\n\nHits:\n{numbered}"
     system = (_SYSTEM if legal is None else _HYBRID_SYSTEM).format(format=fmt.title())
     if any(hit.purpose == "combo" for hit in hits):
@@ -409,6 +416,16 @@ def judge(llm: BaseChatModel, card: CardInput, hits: list[Hit], fmt: str = "mode
 
 
 RERANKERS = ("none", "llm", "cross_encoder")
+
+
+def load_ban_reasons(path: Path) -> dict[tuple[str, str], str]:
+    """(oracle id, format) -> why the card was banned there, from ingest.ban_announcements."""
+    reasons = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line) if line.strip() else None
+        if row and row.get("reason"):
+            reasons[(row["oracle_id"], row["format"])] = row["reason"]
+    return reasons
 
 
 def _processed_dir(cfg: dict) -> Path:
@@ -439,6 +456,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
     split_context = bool(cfg.get("split_context", False))
     context_rules = cfg.get("context_rules")
     context_rules = None if context_rules is None else int(context_rules)
+    reasons = load_ban_reasons(_processed_dir(cfg) / "ban_reasons.jsonl") if cfg.get("ban_reasons") else None
     # cite: true (claims must cite hits), false (no citation rules), catalog (named cards must be legal
     # ones) or hybrid (with retrieval: cite hits, or name legal cards and rule numbers from memory).
     cite = cfg.get("cite", True)
@@ -515,7 +533,7 @@ def build_graph(config: dict | Path | str, judge_report: bool = True):
                 report, dropped = validate_names(report, legal(fmt), own)
             return {"report": report, "dropped_claims": dropped}
         hits = (state.get("oracle_hits") or []) + judge_context(state.get("hits") or [], context_cards, context_rules)
-        report, dropped = judge(llm, state["card"], hits, fmt, legal(fmt) if cite == "hybrid" else None)
+        report, dropped = judge(llm, state["card"], hits, fmt, legal(fmt) if cite == "hybrid" else None, reasons)
         return {"report": report, "dropped_claims": dropped}
 
     graph = StateGraph(PipelineState)

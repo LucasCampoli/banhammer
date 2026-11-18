@@ -141,3 +141,10 @@ def test_validate_hybrid_accepts_labels_legal_names_and_rule_numbers():
     assert dropped == 2
     assert [c.card_ids for c in cleaned.combos] == [["oracle-a"], ["Pestermite"]]
     assert cleaned.wording_issues[0].rule_ids == ["702.19a"]
+
+
+def test_number_hits_adds_the_ban_reason_to_the_mark():
+    hits = [card_hit("a", "Hogaak, Arisen Necropolis", ["modern"]), card_hit("b", "Bloodghast")]
+    _, block = number_hits(hits, {("a", "modern"): "Its deck kept a high win rate."})
+    assert block.splitlines()[0].startswith("[C1] (banned in modern: Its deck kept a high win rate.) Hogaak")
+    assert block.splitlines()[1].startswith("[C2] Bloodghast")
